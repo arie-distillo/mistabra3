@@ -1,0 +1,7 @@
+{
+  "objectives": ["Hateful radicals plan a violent attack on members of Community X", "Burglary of homes in the Riverside neighbourhood",
+                 "Harassment of community members online", "Vandalism of community institutions", "Grow attendance at community events"],
+  "concepts": ["Community institution", "Community Centre", "Place of Worship", "Northfield Community School", "Community member", "Riverside", "Community event", "Field report"],
+  "entity_types": ["person", "institution", "location", "vehicle", "organization", "online account"],
+  "sources": ["Field reports", "Community hotline", "Social media monitoring", "Police liaison bulletin"]
+}

@@ -1,0 +1,18 @@
+{
+  "note": "Ground truth for entity resolution: surfaces that must resolve to one entity; different clusters must not merge.",
+  "clusters": [
+    {"entity": "Jens Hofer", "type": "person", "surfaces": ["Jens Hofer", "Jens Hofer's"]},
+    {"entity": "Maria Klein", "type": "person", "surfaces": ["Maria Klein", "Maria Klein's"]},
+    {"entity": "Karl Brandt", "type": "person", "surfaces": ["Karl Brandt", "Brandt"]},
+    {"entity": "Community Centre", "type": "institution", "surfaces": ["Community Centre", "the Community Centre", "CX Centre", "the centre"]},
+    {"entity": "Place of Worship", "type": "institution", "surfaces": ["Place of Worship", "the Place of Worship"]},
+    {"entity": "Northfield Community School", "type": "institution", "surfaces": ["Northfield Community School"]},
+    {"entity": "Elm Street", "type": "location", "surfaces": ["Elm Street"]},
+    {"entity": "Maple Road", "type": "location", "surfaces": ["Maple Road"]},
+    {"entity": "Church Lane", "type": "location", "surfaces": ["Church Lane"]},
+    {"entity": "Thomas Berg", "type": "person", "surfaces": ["Thomas Berg"]},
+    {"entity": "Anna Weiss", "type": "person", "surfaces": ["Anna Weiss"]},
+    {"entity": "Ruth Adler", "type": "person", "surfaces": ["Ruth Adler"]}
+  ],
+  "must_not_merge": [["Jens Hofer", "Maria Klein"], ["Karl Brandt", "Thomas Berg"], ["Community Centre", "Place of Worship"], ["Elm Street", "Maple Road"]]
+}

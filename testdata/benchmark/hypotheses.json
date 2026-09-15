@@ -1,0 +1,10 @@
+[
+  {"id": "H_community_attack", "objective_label": "Hateful radicals plan a violent attack on members of Community X",
+   "text": "Hateful radicals plan a violent attack on members of Community X.",
+   "actor_description": "Individuals or small groups hostile to Community X; typically outsiders; may act alone or in a small cell.",
+   "concerns": ["Jens Hofer", "Maria Klein", "Community Centre", "Place of Worship", "Northfield Community School", "Elm Street"]},
+  {"id": "H_riverside_burglary", "objective_label": "Burglary of homes in the Riverside neighbourhood",
+   "text": "Someone is preparing to burgle homes in the Riverside neighbourhood.",
+   "actor_description": "Individuals scouting residential homes for theft opportunity.",
+   "concerns": ["Elm Street"]}
+]
