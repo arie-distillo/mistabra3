@@ -106,10 +106,11 @@ class Engine:
                 row = tx.one("SELECT id FROM hypothesis WHERE risk_id=? AND lower(claim)=lower(?)", (risk["id"], claim))
                 if row: hid = row["id"]
                 else:
+                    # No existing hypothesis explains the signal: the abducer creates a Lambda hypothesis.
                     hid = new_id()
-                    tx.execute("INSERT INTO hypothesis(id,risk_id,claim,entities_json,status,origin,created_at) VALUES(?,?,?,?,?,?,?)",
-                               (hid, risk["id"], claim, dumps(rt.entities), "open", "system", now()))
-                    tx.audit("hypothesis.created", "hypothesis", hid, after={"claim": claim, "risk_id": risk["id"]}, llm_call_id=c1)
+                    tx.execute("INSERT INTO hypothesis(id,risk_id,claim,entities_json,status,origin,is_lambda,predicts_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                               (hid, risk["id"], claim, dumps(rt.entities), "open", "system", 1, dumps(rt.predicts), now()))
+                    tx.audit("hypothesis.created", "hypothesis", hid, after={"claim": claim, "risk_id": risk["id"], "is_lambda": True, "predicts": rt.predicts}, llm_call_id=c1)
             tx.execute("DELETE FROM trajectory WHERE signal_id=? AND status='proposed'", (signal_id,))
             tid = new_id()
             tx.execute("INSERT INTO trajectory(id,signal_id,episode_id,risk_id,radar_id,hypothesis_id,outcome,ordinary_outcome,reach,fit,rationale,status,origin,created_at)"

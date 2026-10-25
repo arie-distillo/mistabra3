@@ -112,7 +112,8 @@ class FakeProvider:
         hid = existing.get(claim.lower())
         return {"hypothesis_id": hid, "claim": None if hid else claim, "reach": reach, "fit": fit,
                 "rationale": f"The episode shows {content.get('behaviour') or 'behaviour'} toward {target}; if {claim.lower()}, this is a step toward: {d['risk_text']}.",
-                "entities": content.get("entities", []), "missing": ["occurrence time"] if d.get("occurred_kind") == "unknown" else []}
+                "entities": content.get("entities", []), "missing": ["occurrence time"] if d.get("occurred_kind") == "unknown" else [],
+                "predicts": ["repeated observation of the same target", "attempt to learn routines or access"] if reach < 0.7 else ["acquisition of means", "rehearsal at the site"]}
 
     def _trajectory_baseline(self, d):
         low = d["episode_text"].lower()

@@ -14,6 +14,17 @@ def test_episode_creates_signal_trajectories_and_hypothesis(m, ready):
     assert len(m.hypotheses.list(risk_id=ready.id)) == 1
 
 
+def test_system_hypothesis_is_lambda_with_predictions(m, ready):
+    """A hypothesis the abducer creates because none explained the signal is a Lambda hypothesis and says what it predicts."""
+    m.episodes.create(HOUSE, "host", source="Field reports")
+    h = m.hypotheses.list(risk_id=ready.id)[0]
+    assert h.is_lambda and h.origin == "system" and len(h.predicts) >= 1
+    assert m.hypotheses.list(risk_id=ready.id, is_lambda=True) == [h]
+    assert all(not b.is_lambda for b in m.hypotheses.list(risk_id=ready.id, status="ordinary"))
+    ev = [e for e in m.audit.events(object_type="hypothesis", object_id=h.id) if e["action"] == "hypothesis.created"][0]
+    assert ev["after"]["is_lambda"] is True
+
+
 def test_idempotent_episode(m, ready):
     a = m.episodes.create(HOUSE, "host", source="Field reports"); b = m.episodes.create(" " + HOUSE + " ", "host", source="Field reports")
     assert a.id == b.id and m.stats()["signals"] == 1

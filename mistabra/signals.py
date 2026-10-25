@@ -12,7 +12,8 @@ def _traj(r) -> Trajectory:
 
 
 def _hyp(r) -> Hypothesis:
-    return Hypothesis(id=r["id"], risk_id=r["risk_id"], claim=r["claim"], entities=json.loads(r["entities_json"]), status=r["status"], origin=r["origin"], created_at=r["created_at"])
+    return Hypothesis(id=r["id"], risk_id=r["risk_id"], claim=r["claim"], entities=json.loads(r["entities_json"]), status=r["status"], origin=r["origin"],
+                      is_lambda=bool(r["is_lambda"]), predicts=json.loads(r["predicts_json"]), created_at=r["created_at"])
 
 
 class SignalsAPI:
@@ -121,11 +122,12 @@ class HypothesesAPI:
         if r is None: raise KeyError(hypothesis_id)
         return _hyp(r)
 
-    def list(self, *, risk_id: str | None = None, status: str | None = None, include_ordinary: bool = False) -> list[Hypothesis]:
+    def list(self, *, risk_id: str | None = None, status: str | None = None, include_ordinary: bool = False, is_lambda: bool | None = None) -> list[Hypothesis]:
         q, p = "SELECT * FROM hypothesis WHERE 1=1", []
         if risk_id: q += " AND risk_id=?"; p.append(risk_id)
         if status: q += " AND status=?"; p.append(status)
         elif not include_ordinary: q += " AND status!='ordinary'"
+        if is_lambda is not None: q += " AND is_lambda=?"; p.append(int(is_lambda))
         return [_hyp(r) for r in self.store.all(q + " ORDER BY created_at", p)]
 
     def signals(self, hypothesis_id: str) -> list[dict]:

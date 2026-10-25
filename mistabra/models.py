@@ -63,7 +63,10 @@ class Signal(Frozen):
 
 
 class Hypothesis(Frozen):
-    id: str; risk_id: str; claim: str; entities: list[str]; status: str; origin: str; created_at: str
+    """is_lambda: created by the system because no existing hypothesis explained a signal (a Lambda hypothesis).
+    predicts: observations the abducer expects next if the claim is true (used for expected-but-missing evidence)."""
+    id: str; risk_id: str; claim: str; entities: list[str]; status: str; origin: str
+    is_lambda: bool; predicts: list[str]; created_at: str
 
 
 class CoverageItem(Frozen):

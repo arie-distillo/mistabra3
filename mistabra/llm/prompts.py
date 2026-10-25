@@ -27,6 +27,7 @@ class RiskTrajectoryOut(BaseModel):
     rationale: str; reach: float; fit: float
     entities: list[str] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)
+    predicts: list[str] = Field(default_factory=list)   # observations expected next if the claim is true
 
 class BaselineOut(BaseModel):
     ordinary_outcome: str; claim: str; rationale: str; fit: float
@@ -70,7 +71,8 @@ PROMPTS: dict[str, Prompt] = {
         "reach: how far along the path to the risk this signal sits (0 = remote precursor, 1 = the risk itself). fit: how well the episode "
         "supports the hypothesis (0 = barely, 1 = strongly; raise for concealment, repetition, odd hours, tooling, explicit intent, named target). "
         "Use precedents (confirmed past trajectories) for consistency. missing: information that would change the assessment. "
-        "Schema: {\"hypothesis_id\":str|null,\"claim\":str|null,\"rationale\":str,\"reach\":0-1,\"fit\":0-1,\"entities\":[str],\"missing\":[str]}",
+        "predicts: 2-4 short observations you would expect to appear next if the claim is true (used to notice when expected evidence fails to arrive). "
+        "Schema: {\"hypothesis_id\":str|null,\"claim\":str|null,\"rationale\":str,\"reach\":0-1,\"fit\":0-1,\"entities\":[str],\"missing\":[str],\"predicts\":[str]}",
         RiskTrajectoryOut, "reasoning"),
     "trajectory.baseline": Prompt("trajectory.baseline", "1", ANALYST,
         "Write the ordinary explanations of the same episode: up to N baseline trajectories, each ending in an ordinary outcome (e.g. 'property "

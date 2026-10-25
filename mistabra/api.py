@@ -79,6 +79,7 @@ class Mistabra:
         return {"context": c("context_item"), "risks": c("risk"), "radars": c("radar"), "episodes": c("episode"), "signals": c("signal"),
                 "signals_lambda": self.store.one("SELECT COUNT(*) AS n FROM signal WHERE via='lambda'")["n"],
                 "trajectories": c("trajectory"), "hypotheses": self.store.one("SELECT COUNT(*) AS n FROM hypothesis WHERE status!='ordinary'")["n"],
+                "hypotheses_lambda": self.store.one("SELECT COUNT(*) AS n FROM hypothesis WHERE is_lambda=1")["n"],
                 "audit_events": c("audit"), "llm_calls": c("llm_call"), "llm": dict(self.gateway.stats),
                 "provider": self.provider.name, "model": self.settings.model, "fast_model": self.settings.fast_model, "blind": self.settings.blind}
 

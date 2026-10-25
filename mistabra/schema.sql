@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS ix_signal_episode ON signal(episode_id);
 
 CREATE TABLE IF NOT EXISTS hypothesis (
   id TEXT PRIMARY KEY, risk_id TEXT NOT NULL, claim TEXT NOT NULL, entities_json TEXT NOT NULL, status TEXT NOT NULL,
-  origin TEXT NOT NULL, created_at TEXT NOT NULL);
+  origin TEXT NOT NULL, is_lambda INTEGER NOT NULL DEFAULT 0, predicts_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS trajectory (
   id TEXT PRIMARY KEY, signal_id TEXT NOT NULL, episode_id TEXT NOT NULL, risk_id TEXT NOT NULL, radar_id TEXT,
