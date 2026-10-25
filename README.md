@@ -7,7 +7,7 @@ against the API spec v3 (PoC subset). In-process Python library; all data in one
 
 Context (documents) → risks (a sentence each) → radars (queries derived from each risk) → episodes.
 Each episode arriving triggers, inline: every enabled radar reads it (relevance + structured extraction);
-a hit creates a **signal**; for open risks, an episode no radar matched gets the open-risk check and may
+a hit creates a **signal**; an episode no radar matched is checked against every risk (Lambda-signal check) and may
 become a **Lambda signal**; every signal gets a **risk trajectory** (one hypothesis, a rationale, reach, fit)
 and **baseline trajectories** (ordinary outcomes), written before any strength; strength is computed from
 reach, fit, gap, specificity and source credibility. The analyst rates blind, then sees the system's view,
@@ -32,7 +32,7 @@ mistabra bench                            # benchmark on testdata/, reported met
 ```bash
 export MISTABRA_PROVIDER=anthropic            # anthropic | openai | fake
 export MISTABRA_MODEL=claude-sonnet-4-5       # reasoning tier: radar derivation, trajectories
-export MISTABRA_FAST_MODEL=claude-haiku-4-5   # operational tier: radar reads, open-risk check (defaults to MODEL)
+export MISTABRA_FAST_MODEL=claude-haiku-4-5   # operational tier: radar reads, Lambda-signal check (defaults to MODEL)
 export MISTABRA_API_KEY=...                   # or ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY
 export MISTABRA_BASE_URL=...                  # openai: any OpenAI-compatible endpoint (OpenRouter, Ollama, vLLM, Groq)
 ```
@@ -86,7 +86,7 @@ testdata/   context/*.md  risks.json  episodes.jsonl  benchmark/labels.json
 ## What the fake provider does and does not prove
 
 With `provider=fake` the suite proves the plumbing: consequences fire, the blind rule holds, trajectories precede
-strength, Lambda only on open risks, precedent and replay work. Its benchmark numbers are heuristics, not method
+strength, Lambda signals land on the right risk, precedent and replay work. Its benchmark numbers are heuristics, not method
 quality. `mistabra bench` with a real provider produces the numbers that matter (signal recall, false signals,
 band accuracy, ordering constraints, Lambda precision, missing-info flags); they are reported, not gated.
 

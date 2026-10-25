@@ -1,4 +1,4 @@
-"""Consequences of an episode (or an analyst-raised signal): radar reads, open-risk check,
+"""Consequences of an episode (or an analyst-raised signal): radar reads, Lambda-signal check,
 signals, trajectories (risk + baselines), hypothesis matching, strength. Inline, synchronous."""
 from __future__ import annotations
 import json
@@ -54,12 +54,13 @@ class Engine:
                 radar, out, call_id = hit
                 sid = self._create_signal(ep, risk, "system", "radar", radar["id"], out.content, out.missing, actor, call_id)
                 created.append(sid)
-            elif risk["open"]:
+            else:
+                # No radar matched: Lambda-signal check against this risk, on the operational tier.
                 try:
-                    out, call_id = self.gw.call("risk.open_check", {"risk_text": risk["text"], "episode_text": ep["text"], "context": self.context_snippets(risk["text"], 3)},
+                    out, call_id = self.gw.call("signal.lambda_check", {"risk_text": risk["text"], "episode_text": ep["text"], "context": self.context_snippets(risk["text"], 3)},
                                                 subject=("episode", episode_id))
                 except LLMError as e:
-                    self.log(f"open_check failed: {e}"); continue
+                    self.log(f"lambda_check failed: {e}"); continue
                 if out.relevant and out.confidence >= 0.5:
                     sid = self._create_signal(ep, risk, "system", "lambda", None, out.content, [], actor, call_id, note=out.why)
                     created.append(sid)

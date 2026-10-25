@@ -14,7 +14,7 @@ def load_testdata(m, testdata: Path | str, actor: str = "bench", log=print) -> d
         m.context.create_file(p, actor)
     risks = {}
     for r in json.loads((td / "risks.json").read_text()):
-        risk = m.risks.create(r["text"], actor, open=r.get("open", False))
+        risk = m.risks.create(r["text"], actor)
         n = len(m.radars.derive(risk.id, actor))
         risks[r["key"]] = risk.id
         log(f"[bench] risk {r['key']}: {n} radars derived")

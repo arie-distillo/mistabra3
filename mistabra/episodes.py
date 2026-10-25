@@ -48,7 +48,7 @@ class EpisodesAPI:
     def __init__(self, store: Store, engine): self.store, self.engine = store, engine
 
     def create(self, text: str, actor: str, *, source: str, occurred=None, metadata: dict | None = None) -> Episode:
-        """Idempotent on (source, content hash). Consequences run inline: radar reads, open-risk check, signals, trajectories."""
+        """Idempotent on (source, content hash). Consequences run inline: radar reads, Lambda-signal check, signals, trajectories."""
         src = self.store.one("SELECT * FROM source WHERE id=? OR name=?", (source, source))
         if src is None: raise KeyError(f"source {source!r} not registered")
         h = hashlib.sha256(text.strip().encode()).hexdigest()

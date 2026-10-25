@@ -92,9 +92,9 @@ class FakeProvider:
         missing = [] if any(k in d["episode_text"].lower() for k in ("photograph", "filmed", "bought", "posted", "asked", "sketched", "timed", "shared", "wrote", "compiled", "purchased", "parked")) else ["what exactly happened"]
         return {"relevant": True, "confidence": 0.8, "content": self._content(d["episode_text"], d["risk_text"]), "missing": missing}
 
-    def _risk_open_check(self, d):
-        low = d["episode_text"].lower()
-        rel = any(k in low for k in ("community centre", "place of worship", "community school", "members of community", "community x")) and len(low) > 40
+    def _signal_lambda_check(self, d):
+        low, risk = d["episode_text"].lower(), d["risk_text"].lower()
+        rel = ("community" in risk and any(k in low for k in ("community centre", "place of worship", "community school", "members of community", "community x")) and len(low) > 40)
         return {"relevant": rel, "confidence": 0.6 if rel else 0.9, "why": "mentions a community institution in an unusual way" if rel else "",
                 "content": self._content(d["episode_text"], d["risk_text"]) if rel else None}
 

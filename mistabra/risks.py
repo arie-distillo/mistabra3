@@ -5,7 +5,7 @@ from .models import Risk, Radar
 
 
 def _risk(r) -> Risk:
-    return Risk(id=r["id"], text=r["text"], polarity=r["polarity"], open=bool(r["open"]), status=r["status"],
+    return Risk(id=r["id"], text=r["text"], polarity=r["polarity"], status=r["status"],
                 entities=json.loads(r["entities_json"]), origin=r["origin"], created_at=r["created_at"])
 
 
@@ -16,13 +16,13 @@ def _radar(r) -> Radar:
 class RisksAPI:
     def __init__(self, store: Store): self.store = store
 
-    def create(self, text: str, actor: str, *, polarity: str = "negative", open: bool = False, entities=()) -> Risk:
+    def create(self, text: str, actor: str, *, polarity: str = "negative", entities=()) -> Risk:
         rid = new_id()
         ents = list(entities) or re.findall(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b", text)
         with self.store.tx(actor) as tx:
-            tx.execute("INSERT INTO risk(id,text,polarity,open,status,entities_json,origin,created_at) VALUES(?,?,?,?,?,?,?,?)",
-                       (rid, text, polarity, int(open), "active", dumps(ents), "analyst", now()))
-            tx.audit("risk.created", "risk", rid, after={"text": text, "polarity": polarity, "open": open})
+            tx.execute("INSERT INTO risk(id,text,polarity,status,entities_json,origin,created_at) VALUES(?,?,?,?,?,?,?)",
+                       (rid, text, polarity, "active", dumps(ents), "analyst", now()))
+            tx.audit("risk.created", "risk", rid, after={"text": text, "polarity": polarity})
         return self.get(rid)
 
     def get(self, risk_id: str) -> Risk:
@@ -36,14 +36,13 @@ class RisksAPI:
         return [_risk(r) for r in self.store.all(q + " ORDER BY created_at", p)]
 
     def update(self, risk_id: str, actor: str, **fields) -> Risk:
-        allowed = {"text", "open", "status", "entities"}
+        allowed = {"text", "status", "entities"}
         bad = set(fields) - allowed
         if bad: raise ValueError(f"cannot update {bad}")
         with self.store.tx(actor) as tx:
             before = tx.one("SELECT * FROM risk WHERE id=?", (risk_id,))
             if before is None: raise KeyError(risk_id)
             if "text" in fields: tx.execute("UPDATE risk SET text=? WHERE id=?", (fields["text"], risk_id))
-            if "open" in fields: tx.execute("UPDATE risk SET open=? WHERE id=?", (int(fields["open"]), risk_id))
             if "status" in fields: tx.execute("UPDATE risk SET status=? WHERE id=?", (fields["status"], risk_id))
             if "entities" in fields: tx.execute("UPDATE risk SET entities_json=? WHERE id=?", (dumps(list(fields["entities"])), risk_id))
             tx.audit("risk.updated", "risk", risk_id, before={k: before[k if k != "entities" else "entities_json"] for k in fields}, after=fields)

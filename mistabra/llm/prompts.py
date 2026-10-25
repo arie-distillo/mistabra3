@@ -18,7 +18,7 @@ class ContentOut(BaseModel):
 class RadarReadOut(BaseModel):
     relevant: bool; confidence: float = 0.5; content: ContentOut | None = None; missing: list[str] = Field(default_factory=list)
 
-class OpenCheckOut(BaseModel):
+class LambdaCheckOut(BaseModel):
     relevant: bool; confidence: float = 0.5; why: str = ""; content: ContentOut | None = None
 
 class RiskTrajectoryOut(BaseModel):
@@ -58,11 +58,11 @@ PROMPTS: dict[str, Prompt] = {
         "actor, behaviour, target, means, time, modifiers (e.g. concealment, repetition, night, tooling, anonymity), entities (names of people, "
         "places, organisations mentioned), summary (one sentence). List what information is missing that would matter. Be literal: do not infer "
         "intent. Schema: {\"relevant\":bool,\"confidence\":0-1,\"content\":{...}|null,\"missing\":[str]}", RadarReadOut, "fast"),
-    "risk.open_check": Prompt("risk.open_check", "1", ANALYST,
+    "signal.lambda_check": Prompt("signal.lambda_check", "1", ANALYST,
         "No radar matched this episode. Using the risk statement and context only, judge whether the episode could nevertheless be a step toward "
-        "the risk — something a thoughtful analyst would want to look at even though no query anticipated it. Be conservative: most episodes are "
-        "not relevant. If relevant, extract content as in radar reading and say why in one sentence. "
-        "Schema: {\"relevant\":bool,\"confidence\":0-1,\"why\":str,\"content\":{...}|null}", OpenCheckOut, "fast"),
+        "the risk — something a thoughtful analyst would want to look at even though no query anticipated it (a Lambda signal). Be conservative: "
+        "most episodes are not relevant to most risks. If relevant, extract content as in radar reading and say why in one sentence. "
+        "Schema: {\"relevant\":bool,\"confidence\":0-1,\"why\":str,\"content\":{...}|null}", LambdaCheckOut, "fast"),
     "trajectory.risk": Prompt("trajectory.risk", "1", ANALYST,
         "Write the trajectory from this signal to the risk: the single hypothesis (a claim about the world, e.g. 'the house on Elm Street is a "
         "target') that would connect the observed content to the risk, and a rationale in 2-4 sentences telling the story from the episode to the "

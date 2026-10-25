@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS context_item (
   ref_type TEXT, ref_id TEXT, created_at TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS risk (
-  id TEXT PRIMARY KEY, text TEXT NOT NULL, polarity TEXT NOT NULL, open INTEGER NOT NULL, status TEXT NOT NULL,
+  id TEXT PRIMARY KEY, text TEXT NOT NULL, polarity TEXT NOT NULL, status TEXT NOT NULL,
   entities_json TEXT NOT NULL, origin TEXT NOT NULL, created_at TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS radar (

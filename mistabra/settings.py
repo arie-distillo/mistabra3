@@ -19,7 +19,7 @@ class Settings:
     data_dir: Path
     provider: str = "fake"                  # fake | anthropic | openai   (openai = any OpenAI-compatible endpoint)
     model: str = ""                         # reasoning tier: radar derivation, trajectories
-    fast_model: str = ""                    # operational tier: radar reads, open-risk check (defaults to model)
+    fast_model: str = ""                    # operational tier: radar reads, Lambda-signal check (defaults to model)
     api_key: str | None = None
     base_url: str | None = None             # e.g. https://openrouter.ai/api/v1, http://localhost:11434/v1
     force_fake: bool = False

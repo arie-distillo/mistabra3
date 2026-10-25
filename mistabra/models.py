@@ -13,7 +13,7 @@ class ContextItem(Frozen):
 
 
 class Risk(Frozen):
-    id: str; text: str; polarity: Literal["negative", "positive"]; open: bool; status: str
+    id: str; text: str; polarity: Literal["negative", "positive"]; status: str
     entities: list[str]; origin: str; created_at: str
 
 
