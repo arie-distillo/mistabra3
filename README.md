@@ -78,10 +78,36 @@ then by specificity and source credibility. Deterministic, so `learn.replay` can
 mistabra/   settings.py  store.py (+schema.sql)  models.py  engine.py
             llm/ base.py (interface + Anthropic + OpenAI-compatible)  fake.py  prompts.py  gateway.py
             context.py  risks.py (risks, radars)  episodes.py (sources, episodes)  signals.py (signals, trajectories, hypotheses)
+            decision/ base.py (DecisionModel interface)  pairwise.py (PoC method)  setwise.py (frame under test)
             api.py (Mistabra, audit, learn)  eval/benchmark.py  cli.py
-tests/      unit/ (29 tests, offline)   acceptance/run.py (15 checks, --live)
+tests/      unit/ (38 tests, offline)   acceptance/run.py (16 checks, --live; MISTABRA_DECISION=setwise runs them on the other model)
 testdata/   context/*.md  risks.json  episodes.jsonl  benchmark/labels.json
 ```
+
+## The decision model (spike)
+
+Reasoning on a signal is abduction → decision → persistence. The abducer (the `trajectory.risk` and `trajectory.baseline`
+prompts) proposes one trajectory to a hypothesis — reusing an existing one or stating a new claim — and the ordinary
+explanations. The **decision model** then scores the risk's hypothesis set and returns a posterior over it, plus the
+signal's strength. `Settings.decision` (env `MISTABRA_DECISION`) selects it:
+
+- `pairwise` (default) — the PoC method: strength from the documented formula over fit, gap, reach, specificity and
+  credibility; the posterior is derived from the same fits. Stored strengths are unchanged by the refactor.
+- `setwise` — the frame under test: one reasoning-model call (`decision.setwise`) scores every hypothesis, every
+  baseline and *none of these* together, given what is already attached to each hypothesis (the state) and the previous
+  posterior. Strength = posterior mass on the risk hypotheses; `info_gain` = KL to the prior, in bits. Mass on *none*
+  at or above `none_threshold` means the set cannot explain the signal: the abducer is asked for a new claim
+  (`force_new`), it is created as a **Lambda hypothesis**, and the set is scored once more.
+
+Terms: a **Lambda signal** is a signal on an episode no radar matched (`via="lambda"`); a **Lambda hypothesis** is one the
+system created because no existing hypothesis explained a signal (`is_lambda`), either because the abducer said so or
+because the set-wise posterior put the mass on *none*.
+
+Every posterior is stored (`posterior` table, audited as `posterior.written`) and shown on the signal after the analyst
+rates (blind rule). `hypotheses.coverage` carries the latest belief per hypothesis. `learn.replay(ids, actor,
+decision="setwise")` re-scores stored signals with the other model, rebuilding the hypothesis set and state as they were
+when each signal arrived, so the two methods are compared on identical inputs. `mistabra bench --decision setwise`
+runs the benchmark the same way.
 
 ## What the fake provider does and does not prove
 

@@ -2,7 +2,12 @@
 from __future__ import annotations
 import json
 from .store import Store, new_id, now, dumps
-from .models import Signal, SignalContent, Metrics, Trajectory, Hypothesis, Coverage, CoverageItem
+from .models import Signal, SignalContent, Metrics, Trajectory, Hypothesis, Coverage, CoverageItem, PosteriorView
+
+
+def _post(r) -> PosteriorView:
+    return PosteriorView(decision=r["decision"], model=r["model"], prompt_version=r["prompt_version"], distribution=json.loads(r["distribution_json"]),
+                         info_gain=r["info_gain"], strength=r["strength"], rationale=r["rationale"], created_at=r["created_at"])
 
 
 def _traj(r) -> Trajectory:
@@ -23,12 +28,14 @@ class SignalsAPI:
         hidden = self.settings.blind and r["strength_analyst"] is None and not unblind
         trs = [_traj(t) for t in self.store.all("SELECT * FROM trajectory WHERE signal_id=? ORDER BY outcome DESC, fit DESC", (r["id"],))]
         risk_t = next((t for t in trs if t.outcome == "risk"), None)
+        pr = self.store.one("SELECT * FROM posterior WHERE signal_id=? ORDER BY created_at DESC LIMIT 1", (r["id"],))
         return Signal(id=r["id"], episode_id=r["episode_id"], risk_id=r["risk_id"], origin=r["origin"], via=r["via"], radar_id=r["radar_id"],
                       content=SignalContent.model_validate_json(r["content_json"]), note=r["note"],
                       strength_system=None if hidden else r["strength_system"], strength_analyst=r["strength_analyst"],
                       metrics=None if hidden or not r["metrics_json"] else Metrics(**json.loads(r["metrics_json"])),
                       missing=json.loads(r["missing_json"]), status=r["status"],
                       trajectory=None if hidden else risk_t, baselines=[] if hidden else [t for t in trs if t.outcome == "ordinary"],
+                      posterior=None if hidden or pr is None else _post(pr),
                       versions=json.loads(r["versions_json"]), created_at=r["created_at"])
 
     def create(self, episode_id: str, risk_id: str, actor: str, *, content: dict | None = None, note: str | None = None) -> Signal:
@@ -137,12 +144,17 @@ class HypothesesAPI:
                               "ORDER BY COALESCE(e.occurred_start, '9999'), s.created_at", (hypothesis_id,))
         return [dict(r) for r in rows]
 
+    def belief(self, risk_id: str) -> dict[str, float]:
+        """Latest posterior for the risk, as hypothesis id -> probability (includes baselines and 'none')."""
+        r = self.store.one("SELECT distribution_json FROM posterior WHERE risk_id=? ORDER BY created_at DESC LIMIT 1", (risk_id,))
+        return json.loads(r["distribution_json"]) if r else {}
+
     def coverage(self, risk_id: str) -> Coverage:
-        items = []
+        items, bel = [], self.belief(risk_id)
         for h in self.list(risk_id=risk_id):
             sup = self.signals(h.id)
             if not sup: continue
             items.append(CoverageItem(hypothesis=h, support=len(sup), max_reach=max(s["reach"] for s in sup),
-                                      first_seen=sup[0]["occurred_start"], last_seen=sup[-1]["occurred_start"]))
+                                      first_seen=sup[0]["occurred_start"], last_seen=sup[-1]["occurred_start"], belief=bel.get(h.id)))
         items.sort(key=lambda i: (i.max_reach, i.support))
         return Coverage(risk_id=risk_id, items=items, path_reach=max((i.max_reach for i in items), default=0.0))

@@ -82,7 +82,7 @@ def run_benchmark(m, testdata: Path | str, log=print) -> dict:
         "orderings_satisfied": _ratio(res["orderings"]), "lambda_detected": res["lambda"],
         "lambda_precision": round(lam_pos / len(lam), 2) if lam else None, "lambda_signals": len(lam),
         "missing_flagged": _ratio([x for x in res["missing"] if x is not None]), "accumulation": res["accumulation"],
-        "llm": m.stats()["llm"], "provider": m.provider.name, "model": m.settings.model,
+        "llm": m.stats()["llm"], "provider": m.provider.name, "model": m.settings.model, "decision": m.settings.decision,
     }
     for k, v in summary.items():
         log(f"[bench] {k}: {v}")

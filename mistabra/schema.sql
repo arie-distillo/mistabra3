@@ -48,3 +48,9 @@ CREATE TABLE IF NOT EXISTS trajectory (
   hypothesis_id TEXT NOT NULL, outcome TEXT NOT NULL, ordinary_outcome TEXT, reach REAL NOT NULL, fit REAL NOT NULL,
   rationale TEXT NOT NULL, status TEXT NOT NULL, origin TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_traj_signal ON trajectory(signal_id);
+
+CREATE TABLE IF NOT EXISTS posterior (
+  id TEXT PRIMARY KEY, signal_id TEXT NOT NULL, risk_id TEXT NOT NULL, decision TEXT NOT NULL, model TEXT NOT NULL, prompt_version TEXT NOT NULL,
+  distribution_json TEXT NOT NULL, info_gain REAL NOT NULL, strength REAL NOT NULL, rationale TEXT NOT NULL, state_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS ix_post_signal ON posterior(signal_id);
+CREATE INDEX IF NOT EXISTS ix_post_risk ON posterior(risk_id, created_at);

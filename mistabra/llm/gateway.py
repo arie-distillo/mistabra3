@@ -13,6 +13,10 @@ class Gateway:
         self.store, self.settings, self.provider = store, settings, provider
         self.stats = {"calls": 0, "cached": 0, "errors": 0}
 
+    @staticmethod
+    def version_of(task: str) -> str:
+        return PROMPTS[task].version
+
     def model_for(self, tier: str) -> str:
         return self.settings.model if tier == "reasoning" else self.settings.fast_model
 

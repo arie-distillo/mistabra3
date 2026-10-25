@@ -24,6 +24,9 @@ class Settings:
     base_url: str | None = None             # e.g. https://openrouter.ai/api/v1, http://localhost:11434/v1
     force_fake: bool = False
     blind: bool = True                      # hide system strength/trajectory until the analyst rates
+    decision: str = "pairwise"              # pairwise (PoC method) | setwise (decision-model frame under test)
+    decision_model: str = ""                # model for the set-wise scorer; defaults to `model`
+    none_threshold: float = 0.35            # posterior mass on "none of these" that creates a Lambda hypothesis (setwise)
     timeout_s: float = 120.0
     max_baselines: int = 3
     extra: dict = field(default_factory=dict)
@@ -40,6 +43,7 @@ class Settings:
             base_url=e.get("MISTABRA_BASE_URL"),
             force_fake=_truthy(e.get("MISTABRA_FORCE_FAKE")),
             blind=not _truthy(e.get("MISTABRA_NO_BLIND")),
+            decision=e.get("MISTABRA_DECISION", "pairwise"),
         )
         for k, v in overrides.items():
             setattr(s, k, v)

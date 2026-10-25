@@ -52,13 +52,18 @@ class Trajectory(Frozen):
     reach: float; fit: float; rationale: str; status: str; origin: str; created_at: str
 
 
+class PosteriorView(Frozen):
+    """The decision model's output for one signal: a distribution over the risk's hypothesis set, baselines and 'none'."""
+    decision: str; model: str; prompt_version: str; distribution: dict[str, float]; info_gain: float; strength: float; rationale: str; created_at: str
+
+
 class Signal(Frozen):
     id: str; episode_id: str; risk_id: str; origin: str
     via: Literal["radar", "lambda", "analyst"]; radar_id: str | None
     content: SignalContent; note: str | None
     strength_system: float | None; strength_analyst: float | None
     metrics: Metrics | None; missing: list[str]; status: str
-    trajectory: Trajectory | None; baselines: list[Trajectory]
+    trajectory: Trajectory | None; baselines: list[Trajectory]; posterior: PosteriorView | None
     versions: dict; created_at: str
 
 
@@ -71,6 +76,7 @@ class Hypothesis(Frozen):
 
 class CoverageItem(Frozen):
     hypothesis: Hypothesis; support: int; max_reach: float; first_seen: str | None; last_seen: str | None
+    belief: float | None = None      # latest posterior mass on this hypothesis for the risk (None before any posterior)
 
 
 class Coverage(Frozen):

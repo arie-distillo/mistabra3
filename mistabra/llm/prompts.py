@@ -29,6 +29,10 @@ class RiskTrajectoryOut(BaseModel):
     missing: list[str] = Field(default_factory=list)
     predicts: list[str] = Field(default_factory=list)   # observations expected next if the claim is true
 
+class SetwiseOut(BaseModel):
+    distribution: dict[str, float]
+    rationale: str = ""
+
 class BaselineOut(BaseModel):
     ordinary_outcome: str; claim: str; rationale: str; fit: float
 class BaselinesOut(BaseModel):
@@ -67,13 +71,22 @@ PROMPTS: dict[str, Prompt] = {
     "trajectory.risk": Prompt("trajectory.risk", "1", ANALYST,
         "Write the trajectory from this signal to the risk: the single hypothesis (a claim about the world, e.g. 'the house on Elm Street is a "
         "target') that would connect the observed content to the risk, and a rationale in 2-4 sentences telling the story from the episode to the "
-        "risk. If one of the existing hypotheses already expresses the claim, reuse its id instead of writing a new claim. "
+        "risk. If one of the existing hypotheses already expresses the claim, reuse its id instead of writing a new claim; if force_new is true, the "
+        "existing set has been judged unable to explain this signal, so write a new claim that does. "
         "reach: how far along the path to the risk this signal sits (0 = remote precursor, 1 = the risk itself). fit: how well the episode "
         "supports the hypothesis (0 = barely, 1 = strongly; raise for concealment, repetition, odd hours, tooling, explicit intent, named target). "
         "Use precedents (confirmed past trajectories) for consistency. missing: information that would change the assessment. "
         "predicts: 2-4 short observations you would expect to appear next if the claim is true (used to notice when expected evidence fails to arrive). "
         "Schema: {\"hypothesis_id\":str|null,\"claim\":str|null,\"rationale\":str,\"reach\":0-1,\"fit\":0-1,\"entities\":[str],\"missing\":[str],\"predicts\":[str]}",
         RiskTrajectoryOut, "reasoning"),
+    "decision.setwise": Prompt("decision.setwise", "1", ANALYST,
+        "Score the whole hypothesis set for this risk at once. Input: the new episode; context; the set — risk hypotheses (kind 'risk') and ordinary "
+        "explanations (kind 'baseline'), each with what it predicts and the signals already attached to it (the state); the abducer's proposal for this "
+        "signal (a trajectory to one hypothesis, and baseline trajectories); the prior distribution if any. Return a probability distribution over "
+        "every id in the set plus none_id ('none of these': the episode is explained by none of them). Judge each hypothesis given EVERYTHING attached "
+        "to it, not the episode alone: two individually weak signals on the same hypothesis can make it likely. Put mass on 'none' when neither the "
+        "risk hypotheses nor the ordinary explanations account for the episode. Probabilities must sum to 1. rationale: 2-4 sentences. "
+        "Schema: {\"distribution\":{id:0-1,...},\"rationale\":str}", SetwiseOut, "reasoning"),
     "trajectory.baseline": Prompt("trajectory.baseline", "1", ANALYST,
         "Write the ordinary explanations of the same episode: up to N baseline trajectories, each ending in an ordinary outcome (e.g. 'property "
         "listing', 'tourist album', 'lawful hunting'). For each: the ordinary outcome, the claim that would make it true, a one-to-two sentence "
