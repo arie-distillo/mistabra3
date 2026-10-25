@@ -1,98 +1,96 @@
-# Mistabra (Phase 1 — M0/M1/M2)
+# Mistabra PoC
 
-Weak/strong signal detection and hypothesis management, delivered as an **in-process Python
-library**. All data lives in a directory the host controls: SQLite (system of record, audit,
-model-call log, jobs), a persistent vector index, and immutable ontology version files.
+An analyst's co-pilot that turns intuition into reasoning — proof of concept, built from scratch
+against the API spec v3 (PoC subset). In-process Python library; all data in one directory.
 
-Implemented in this drop: **M0** foundations (store, transactional audit with hash chain, jobs,
-LLM gateway with two model tiers, cache and call log, evaluation harness), **M1** ontology builder
-(documents → extraction + inference → draft with provenance → review → versioned publish, import,
-export), **M2** ingestion, extraction, entity resolution (unresolved state, merge/split/relink).
-M3 (assessment) and M4 (analyst workflow) are next; their tables already exist in the schema and
-their benchmark labels ship in `testdata/benchmark/`.
+## What it does
 
-## Install
+Context (documents) → risks (a sentence each) → radars (queries derived from each risk) → episodes.
+Each episode arriving triggers, inline: every enabled radar reads it (relevance + structured extraction);
+a hit creates a **signal**; for open risks, an episode no radar matched gets the open-risk check and may
+become a **Lambda signal**; every signal gets a **risk trajectory** (one hypothesis, a rationale, reach, fit)
+and **baseline trajectories** (ordinary outcomes), written before any strength; strength is computed from
+reach, fit, gap, specificity and source credibility. The analyst rates blind, then sees the system's view,
+confirms or rejects trajectories (confirmed ones become precedent), and reads hypothesis coverage per risk.
+Everything is audited with a hash chain; any signal can be traced to its model calls; replay re-reasons
+signals and diffs against what was stored.
+
+## Install and run
 
 ```bash
-pip install -e .            # core: pydantic, httpx, rapidfuzz, numpy, pyyaml
-pip install -e .[splink]    # optional probabilistic entity-resolution backend
-pip install -e .[vectors]   # optional LanceDB backend (see note below)
-pip install -e .[dev]       # pytest
+pip install -e .            # pydantic, httpx
+pip install -e .[dev]       # + pytest
+
+python -m pytest                          # unit tier: offline, deterministic, ~1 s
+python -m tests.acceptance.run            # the PoC demonstration list, fake provider
+python -m tests.acceptance.run --live     # same against the configured real model
+mistabra bench                            # benchmark on testdata/, reported metrics
 ```
 
-## Quick start (offline, fake model)
+## LLM setup — one interface, any provider
+
+```bash
+export MISTABRA_PROVIDER=anthropic            # anthropic | openai | fake
+export MISTABRA_MODEL=claude-sonnet-4-5       # reasoning tier: radar derivation, trajectories
+export MISTABRA_FAST_MODEL=claude-haiku-4-5   # operational tier: radar reads, open-risk check (defaults to MODEL)
+export MISTABRA_API_KEY=...                   # or ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY
+export MISTABRA_BASE_URL=...                  # openai: any OpenAI-compatible endpoint (OpenRouter, Ollama, vLLM, Groq)
+```
+
+Examples: OpenRouter → `provider=openai base_url=https://openrouter.ai/api/v1 model=anthropic/claude-sonnet-4.5`;
+Ollama → `provider=openai base_url=http://localhost:11434/v1 model=llama3.1` (no key needed).
+`MISTABRA_FORCE_FAKE=1` overrides everything (unit tests set it). Or in code:
 
 ```python
-from mistabra import Mistabra
-
-m = Mistabra("./data")                      # provider defaults to the offline fake
-did = m.ontology.build_draft("default", [("risks.md", open("risks.md").read())], actor="expert")
-m.ontology.accept_all(did, "expert")        # or review element by element
-vid = m.ontology.publish(did, "expert")     # immutable v1 under ./data/ontology/default/v1.json
-
-src = m.sources.register("Field reports", "manual", credibility=0.8, actor="admin")
-m.episodes.ingest(src, "A passer-by photographed Jens Hofer's house on Elm Street.", actor="host",
-                  occurrence_time="2026-08-03T10:15:00Z")
-m.process()                                 # runs extraction and entity-resolution jobs
-
-m.episodes.list(); m.entities.list(); m.entities.unresolved()
-m.audit.events(); m.audit.verify_chain()
-m.callbacks.on("entity.merged", print)
+from mistabra import Mistabra, Settings
+m = Mistabra("./data", Settings(data_dir="./data", provider="openai", base_url="https://openrouter.ai/api/v1",
+                                api_key="...", model="anthropic/claude-sonnet-4.5", fast_model="anthropic/claude-haiku-4.5"))
 ```
 
-CLI equivalents: `mistabra ontology-build ./data --docs ./testdata/docs --accept-all --publish`,
-`mistabra ingest ./data --source "Field reports" --jsonl ./testdata/episodes.jsonl`,
-`mistabra process ./data`, `mistabra stats ./data`, `mistabra eval ./data --testdata ./testdata`.
+A provider is one class with one method (`complete(model, system, user, max_tokens) -> (text, usage)`);
+prompts, JSON parsing, caching, logging and retries live in the gateway. Malformed output is an error, not a retry.
 
-## Real models
+## The API (PoC subset)
 
-Configure by environment (or pass a `Settings`):
-
-```bash
-export MISTABRA_PROVIDER=anthropic            # or openai_compatible
-export ANTHROPIC_API_KEY=...                  # or MISTABRA_API_KEY / OPENROUTER_API_KEY
-export MISTABRA_BASE_URL=https://openrouter.ai/api/v1   # openai_compatible only
-export MISTABRA_REASONING_MODEL=...           # strong model: signal inference, (M3) assessment
-export MISTABRA_OPERATIONAL_MODEL=...         # cheap model: extraction, adjudication
+```python
+m.context.create(text, actor, title=…, kind=…) / create_file(path, actor) / search(query) / list(kind)
+m.risks.create(text, actor, open=False) / get / list / update(id, actor, open=…, status=…)
+m.radars.create(risk_id, query, actor) / derive(risk_id, actor) / list(risk_id) / update(id, actor, enabled=…)
+m.sources.create(name, actor, credibility=…)
+m.episodes.create(text, actor, source=…, occurred=…, metadata=…) / create_many / get / list      # drives everything
+m.signals.list(risk_id=…, status=…, via=…, episode_id=…) / get / update(id, actor, strength=…, status=…) / create(episode_id, risk_id, actor, note=…) / remove
+m.trajectories.list(signal_id=…) / get / update(id, actor, status="confirmed"|"rejected")
+m.hypotheses.list(risk_id=…) / get / signals(id) / coverage(risk_id)
+m.audit.events(…) / trace(signal_id) / verify()
+m.learn.replay(signal_ids, actor, model=…, prompt_version=…)
+m.stats()
 ```
 
-`MISTABRA_FORCE_MOCK=1` overrides everything and routes to the fake — unit tests set it, so a key
-in the environment can never turn a unit run into a billable one.
+Blind rule: `Signal.strength_system`, `metrics`, `trajectory` and `baselines` read as empty until the analyst sets
+`strength` on the signal (`Settings(blind=False)` turns it off; the mode is recorded on every audit event).
 
-## Tests and evaluation
+Strength: `0.4·fit + 0.4·max(gap,0) + 0.2·reach`, scaled down by `(1+gap)` when an ordinary explanation fits better,
+then by specificity and source credibility. Deterministic, so `learn.replay` can isolate model/prompt changes.
 
-```bash
-python -m pytest                              # unit tier: offline, deterministic, ~1 s
-python -m tests.acceptance.run                # acceptance journeys via the public API, fake model
-python -m tests.acceptance.run --live         # same journeys against the configured real model
-mistabra eval ./eval-data --testdata ./testdata   # measurements (not gates): extraction P/R, resolution P/R
+## Layout
+
+```
+mistabra/   settings.py  store.py (+schema.sql)  models.py  engine.py
+            llm/ base.py (interface + Anthropic + OpenAI-compatible)  fake.py  prompts.py  gateway.py
+            context.py  risks.py (risks, radars)  episodes.py (sources, episodes)  signals.py (signals, trajectories, hypotheses)
+            api.py (Mistabra, audit, learn)  eval/benchmark.py  cli.py
+tests/      unit/ (29 tests, offline)   acceptance/run.py (15 checks, --live)
+testdata/   context/*.md  risks.json  episodes.jsonl  benchmark/labels.json
 ```
 
-The fake provider proves plumbing, not quality: with it, evaluation metrics are trivially perfect
-because the test documents are written in the shapes it parses. Run `eval` with a real provider to
-measure method quality; those numbers are tracked over time, not used as pass/fail.
+## What the fake provider does and does not prove
 
-## Test data (`testdata/`)
+With `provider=fake` the suite proves the plumbing: consequences fire, the blind rule holds, trajectories precede
+strength, Lambda only on open risks, precedent and replay work. Its benchmark numbers are heuristics, not method
+quality. `mistabra bench` with a real provider produces the numbers that matter (signal recall, false signals,
+band accuracy, ordering constraints, Lambda precision, missing-info flags); they are reported, not gated.
 
-Fictional organization "Community Safety Trust": four domain documents, a reviewed reference
-ontology, 31 seed episodes (signals across the strength range, hard negatives that mirror
-positives, easy negatives, missing-information cases), entity-resolution ground truth, and the
-human-labelled (episode × hypothesis) severity benchmark for M3, including a Lambda case and
-counterfactual pairs.
+## Not in the PoC (MVP)
 
-## Design notes and known limits
-
-- **Ontology JSON schema** has two behavioural layers, observables and signal types, linked by
-  `can_serve` with a base-rate prior; concepts, entity types, sources. Baseline explanations are
-  deliberately not in the ontology (generated at runtime in M3).
-- **Entity resolution** default: normalization + alias/surname rules + fuzzy similarity, with the
-  operational model adjudicating the ambiguous band and `unresolved` as a first-class outcome.
-  `SplinkResolver` is available as an opt-in backend with hand-set parameters; it becomes useful
-  once confirmed links exist to train on.
-- **Vector backend** defaults to a persistent numpy index (adequate to tens of thousands of
-  vectors, deterministic). LanceDB is opt-in (`vector_backend="lancedb"`) because it crashed
-  intermittently at interpreter shutdown in the development environment.
-- **Embeddings** default to a hashing embedder (offline). Use `OpenAICompatibleEmbedder` for
-  production similarity quality, including multilingual/Hebrew.
-- The fake NER is English-only and naive by design; the real extraction prompt is language-agnostic.
-- Single-process: the host should use one `Mistabra` instance per data directory.
+Background execution, risk derivation from context, radar edits replaying over history, hypothesis creation and
+premises, entity resolution and corrections, per-radar/risk stats, precedent export, events, the MCP server.

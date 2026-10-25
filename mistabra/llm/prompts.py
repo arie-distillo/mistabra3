@@ -1,58 +1,81 @@
-"""Versioned prompt templates. Every rendered prompt starts with a TASK line and
-carries its input as a JSON block, so outputs are reproducible and the fake
-provider can parse the same input the real model sees."""
+"""Versioned prompts. Each renders to (system, user) with the input as a JSON block,
+and declares the pydantic schema the output must satisfy."""
 from __future__ import annotations
 import json
 from dataclasses import dataclass
+from pydantic import BaseModel, Field
+
+
+# ---- output schemas ----
+class RadarDraft(BaseModel):
+    query: str
+class RadarsOut(BaseModel):
+    radars: list[RadarDraft] = Field(default_factory=list)
+
+class ContentOut(BaseModel):
+    actor: str | None = None; behaviour: str | None = None; target: str | None = None; means: str | None = None
+    time: str | None = None; modifiers: list[str] = Field(default_factory=list); entities: list[str] = Field(default_factory=list); summary: str = ""
+class RadarReadOut(BaseModel):
+    relevant: bool; confidence: float = 0.5; content: ContentOut | None = None; missing: list[str] = Field(default_factory=list)
+
+class OpenCheckOut(BaseModel):
+    relevant: bool; confidence: float = 0.5; why: str = ""; content: ContentOut | None = None
+
+class RiskTrajectoryOut(BaseModel):
+    hypothesis_id: str | None = None          # reuse an existing hypothesis
+    claim: str | None = None                  # or state a new one
+    rationale: str; reach: float; fit: float
+    entities: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+
+class BaselineOut(BaseModel):
+    ordinary_outcome: str; claim: str; rationale: str; fit: float
+class BaselinesOut(BaseModel):
+    baselines: list[BaselineOut] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class Prompt:
-    id: str
-    version: str
-    system: str
-    instructions: str
+    id: str; version: str; system: str; instructions: str; schema: type[BaseModel]; tier: str   # tier: reasoning | fast
 
     def render(self, variables: dict) -> tuple[str, str]:
-        user = f"TASK: {self.id}\n\n{self.instructions}\n\nINPUT_JSON:\n{json.dumps(variables, ensure_ascii=False, indent=1)}\n\nRespond with a single JSON object and nothing else."
+        user = (f"TASK: {self.id}\n\n{self.instructions}\n\nINPUT_JSON:\n{json.dumps(variables, ensure_ascii=False, indent=1)}\n\n"
+                "Respond with a single JSON object matching the schema and nothing else.")
         return self.system, user
 
 
-JSON_ONLY = "You are a precise information-extraction component inside an analyst tool. Output only valid JSON matching the requested schema."
+ANALYST = ("You are a careful intelligence analyst's co-pilot. You reason about whether an observed event could be a step "
+           "toward a stated risk, and you always consider the ordinary explanations too. Output only valid JSON.")
 
 PROMPTS: dict[str, Prompt] = {
-    "ontology.extract": Prompt(
-        "ontology.extract", "1",
-        JSON_ONLY,
-        "From the document chunk, extract domain-ontology elements. objectives: risks (polarity 'negative') or goals "
-        "(polarity 'positive') the organization states. concepts: domain vocabulary terms with aliases and an optional parent term. "
-        "entity_types: classes of resolvable individuals (person, organization, location, vehicle, ...). sources: named information "
-        "sources with a credibility estimate 0-1 if stated. Every element must quote the supporting span in 'evidence'. "
-        "Schema: {\"objectives\":[{\"label\",\"polarity\",\"description\",\"concerns_entity_types\":[],\"evidence\"}],"
-        "\"concepts\":[{\"label\",\"aliases\":[],\"parent_label\",\"evidence\"}],\"entity_types\":[{\"label\",\"attributes\":[],\"evidence\"}],"
-        "\"sources\":[{\"label\",\"credibility\",\"evidence\"}]}"),
-    "ontology.infer_signals": Prompt(
-        "ontology.infer_signals", "1",
-        "You are a senior analyst designing early-warning indicators. Output only valid JSON.",
-        "For the objective, infer the signal taxonomy: the precursor signal types that would typically be observed before the "
-        "objective materializes, ordered toward it. For each signal type give proximity_to_harm in [0,1] (1 = the objective itself), "
-        "precursor_to (labels of later signal types), and observables: concrete forms of behaviour visible in text that can serve this "
-        "signal type, each with a base-rate prior in [0,1] (how often that observable, when seen, actually serves this signal type). "
-        "Schema: {\"signal_types\":[{\"label\",\"description\",\"proximity_to_harm\",\"precursor_to\":[],"
-        "\"observables\":[{\"label\",\"description\",\"prior\"}]}]}"),
-    "extract.episode": Prompt(
-        "extract.episode", "1",
-        JSON_ONLY,
-        "From the episode text extract (a) observations: one or more short factual summaries of what was observed, each with the "
-        "ontology observable ids it plausibly instantiates (from the provided list; empty if none) and modifiers (time_of_day, "
-        "repetition, concealment, tooling, proximity, target_specificity) when present; (b) entity mentions: verbatim surface strings "
-        "of persons, organizations, locations, vehicles, institutions, digital identifiers, with a type from the provided entity types "
-        "and any attributes. Schema: {\"observations\":[{\"text\",\"observable_ids\":[],\"modifiers\":{},\"mention_surfaces\":[]}],"
-        "\"mentions\":[{\"surface\",\"entity_type\",\"attributes\":{}}]}"),
-    "entities.adjudicate": Prompt(
-        "entities.adjudicate", "1",
-        JSON_ONLY,
-        "Decide whether the mention refers to one of the candidate entities. Be conservative: choose 'link' only when the evidence "
-        "supports identity, 'new' when it is clearly a different individual, 'unresolved' when it cannot be determined. "
-        "Schema: {\"decision\":\"link|new|unresolved\",\"entity_id\":null,\"confidence\":0.0,\"rationale\":\"\"}"),
+    "radar.derive": Prompt("radar.derive", "1", ANALYST,
+        "Given a risk and domain context, write 3-6 radars. A radar is a query that decides whether an episode (a short text report) "
+        "could be relevant to the risk, and what to extract from it. Each query is one or two sentences, concrete, covering a distinct "
+        "kind of precursor (attention to targets, expressed intent, acquisition of means, coordination, rehearsal...). "
+        "Schema: {\"radars\":[{\"query\":str}]}", RadarsOut, "reasoning"),
+    "radar.read": Prompt("radar.read", "1", ANALYST,
+        "Decide whether the episode is relevant to the radar's query for the given risk. If relevant, extract the content in a structured way: "
+        "actor, behaviour, target, means, time, modifiers (e.g. concealment, repetition, night, tooling, anonymity), entities (names of people, "
+        "places, organisations mentioned), summary (one sentence). List what information is missing that would matter. Be literal: do not infer "
+        "intent. Schema: {\"relevant\":bool,\"confidence\":0-1,\"content\":{...}|null,\"missing\":[str]}", RadarReadOut, "fast"),
+    "risk.open_check": Prompt("risk.open_check", "1", ANALYST,
+        "No radar matched this episode. Using the risk statement and context only, judge whether the episode could nevertheless be a step toward "
+        "the risk — something a thoughtful analyst would want to look at even though no query anticipated it. Be conservative: most episodes are "
+        "not relevant. If relevant, extract content as in radar reading and say why in one sentence. "
+        "Schema: {\"relevant\":bool,\"confidence\":0-1,\"why\":str,\"content\":{...}|null}", OpenCheckOut, "fast"),
+    "trajectory.risk": Prompt("trajectory.risk", "1", ANALYST,
+        "Write the trajectory from this signal to the risk: the single hypothesis (a claim about the world, e.g. 'the house on Elm Street is a "
+        "target') that would connect the observed content to the risk, and a rationale in 2-4 sentences telling the story from the episode to the "
+        "risk. If one of the existing hypotheses already expresses the claim, reuse its id instead of writing a new claim. "
+        "reach: how far along the path to the risk this signal sits (0 = remote precursor, 1 = the risk itself). fit: how well the episode "
+        "supports the hypothesis (0 = barely, 1 = strongly; raise for concealment, repetition, odd hours, tooling, explicit intent, named target). "
+        "Use precedents (confirmed past trajectories) for consistency. missing: information that would change the assessment. "
+        "Schema: {\"hypothesis_id\":str|null,\"claim\":str|null,\"rationale\":str,\"reach\":0-1,\"fit\":0-1,\"entities\":[str],\"missing\":[str]}",
+        RiskTrajectoryOut, "reasoning"),
+    "trajectory.baseline": Prompt("trajectory.baseline", "1", ANALYST,
+        "Write the ordinary explanations of the same episode: up to N baseline trajectories, each ending in an ordinary outcome (e.g. 'property "
+        "listing', 'tourist album', 'lawful hunting'). For each: the ordinary outcome, the claim that would make it true, a one-to-two sentence "
+        "rationale, and fit: how well the episode supports THIS ordinary explanation given everything stated (0 = implausible, 1 = fully "
+        "explained; a named benign role or stated purpose raises it; concealment, repetition, anonymity, tooling lower it). "
+        "Schema: {\"baselines\":[{\"ordinary_outcome\":str,\"claim\":str,\"rationale\":str,\"fit\":0-1}]}", BaselinesOut, "reasoning"),
 }

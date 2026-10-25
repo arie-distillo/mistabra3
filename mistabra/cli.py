@@ -1,62 +1,35 @@
-"""Thin CLI over the Python API. Example:
-  mistabra ontology-build ./data --docs ./testdata/docs --accept-all --publish
-  mistabra ingest ./data --source "Field reports" --jsonl ./testdata/episodes.jsonl
-  mistabra process ./data ; mistabra stats ./data ; mistabra eval ./data --testdata ./testdata
-"""
+"""CLI: mistabra bench DATA_DIR --testdata ./testdata | stats DATA_DIR | signals DATA_DIR [--unblind]"""
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, shutil, sys, tempfile
 from pathlib import Path
-
-
-def _m(args):
-    from .api import Mistabra
-    return Mistabra(args.data_dir, log=(lambda s: print(s, flush=True)) if args.verbose else None)
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="mistabra")
-    p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("init"); s.add_argument("data_dir")
-    s = sub.add_parser("ontology-build"); s.add_argument("data_dir"); s.add_argument("--docs", required=True); s.add_argument("--accept-all", action="store_true"); s.add_argument("--publish", action="store_true"); s.add_argument("--actor", default="cli")
-    s = sub.add_parser("ontology-export"); s.add_argument("data_dir"); s.add_argument("--out")
-    s = sub.add_parser("ingest"); s.add_argument("data_dir"); s.add_argument("--source", required=True); s.add_argument("--credibility", type=float, default=0.7); s.add_argument("--jsonl", required=True); s.add_argument("--actor", default="cli")
-    s = sub.add_parser("process"); s.add_argument("data_dir")
+    b = sub.add_parser("bench"); b.add_argument("data_dir", nargs="?"); b.add_argument("--testdata", default=str(Path(__file__).resolve().parents[1] / "testdata")); b.add_argument("--json", action="store_true")
     s = sub.add_parser("stats"); s.add_argument("data_dir")
-    s = sub.add_parser("audit"); s.add_argument("data_dir"); s.add_argument("--limit", type=int, default=50)
-    s = sub.add_parser("entities"); s.add_argument("data_dir")
-    s = sub.add_parser("eval"); s.add_argument("data_dir"); s.add_argument("--testdata", required=True)
-    args = p.parse_args(argv)
-    m = _m(args)
-    if args.cmd == "init":
-        print(json.dumps(m.stats(), indent=1))
-    elif args.cmd == "ontology-build":
-        from .eval import load_testdata_docs
-        did = m.ontology.build_draft(m.ontology_id, load_testdata_docs(args.docs), args.actor)
-        print(f"draft {did}: {len(m.ontology.draft_elements(did))} elements")
-        if args.accept_all: print(f"accepted {m.ontology.accept_all(did, args.actor)}")
-        if args.publish: print(f"published version id {m.ontology.publish(did, args.actor)}")
-    elif args.cmd == "ontology-export":
-        vid = m.ontology.latest_version_id(m.ontology_id)
-        text = m.ontology.export(vid) if vid else "{}"
-        Path(args.out).write_text(text) if args.out else print(text)
-    elif args.cmd == "ingest":
-        from .ingest import read_jsonl
-        src = m.sources.by_name(args.source) or {"id": m.sources.register(args.source, "jsonl", args.credibility, args.actor)}
-        r = m.episodes.ingest_many(src["id"], read_jsonl(args.jsonl), args.actor)
-        print(f"created {r['created']} duplicates {r['duplicates']}")
-    elif args.cmd == "process":
-        print(m.process())
-    elif args.cmd == "stats":
-        print(json.dumps(m.stats(), indent=1))
-    elif args.cmd == "audit":
-        for e in m.audit.events(limit=args.limit): print(e["ts"], e["actor"], e["action"], e["object_type"], (e["object_id"] or "")[:8])
-    elif args.cmd == "entities":
-        for e in m.entities.list(): print(e["entity_type"], "|", e["canonical_name"], "|", ", ".join(e["aliases"]))
-    elif args.cmd == "eval":
-        from .eval import run_eval
-        run_eval(m, args.testdata, log=lambda s: print(s, flush=True))
-    m.close()
+    g = sub.add_parser("signals"); g.add_argument("data_dir"); g.add_argument("--unblind", action="store_true")
+    a = p.parse_args(argv)
+    from .api import Mistabra
+    from .settings import Settings
+    if a.cmd == "bench":
+        tmp = a.data_dir is None
+        data_dir = a.data_dir or tempfile.mkdtemp(prefix="mistabra-bench-")
+        m = Mistabra(data_dir, Settings.from_env(data_dir))
+        print(f"provider={m.provider.name} model={m.settings.model} fast_model={m.settings.fast_model} data_dir={data_dir}", flush=True)
+        from .eval import run_benchmark
+        out = run_benchmark(m, a.testdata, log=lambda x: print(x, flush=True))
+        if a.json: print(json.dumps(out["summary"], indent=1))
+        m.close()
+        if tmp: shutil.rmtree(data_dir, ignore_errors=True)
+    elif a.cmd == "stats":
+        m = Mistabra(a.data_dir); print(json.dumps(m.stats(), indent=1)); m.close()
+    elif a.cmd == "signals":
+        m = Mistabra(a.data_dir, Settings.from_env(a.data_dir, blind=not a.unblind))
+        for sg in m.signals.list():
+            print(f"{sg.id} via={sg.via:7s} strength={sg.strength_system} analyst={sg.strength_analyst} status={sg.status} target={sg.content.target}")
+        m.close()
     return 0
 
 
