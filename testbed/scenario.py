@@ -70,7 +70,7 @@ def _hyp(d):
 
 
 def load_yaml(path: Path) -> Scenario:
-    d = yaml.safe_load(path.read_text())
+    d = yaml.safe_load(path.read_text(encoding="utf-8"))
     sid = d["id"]
     mission = MissionContext(version=str(d["mission"].get("version", "1")),
                              documents=tuple(Document(id=doc.get("id", f"doc{i + 1}"), title=doc.get("title", ""), text=doc["text"].strip())
@@ -90,11 +90,11 @@ CREDIBILITY = {"Field reports": 0.8, "Community hotline": 0.6, "Social media mon
 
 
 def from_community_safety(root: Path = HERE / "data" / "community_safety") -> Scenario:
-    docs = tuple(Document(id=p.stem, title=p.stem.replace("_", " "), text=p.read_text()) for p in sorted((root / "context").glob("*.md")))
-    risks = tuple(Risk(id=r["key"], text=r["text"]) for r in json.loads((root / "risks.json").read_text()))
-    labels = json.loads((root / "labels.json").read_text())
+    docs = tuple(Document(id=p.stem, title=p.stem.replace("_", " "), text=p.read_text(encoding="utf-8")) for p in sorted((root / "context").glob("*.md")))
+    risks = tuple(Risk(id=r["key"], text=r["text"]) for r in json.loads((root / "risks.json").read_text(encoding="utf-8")))
+    labels = json.loads((root / "labels.json").read_text(encoding="utf-8"))
     steps = []
-    for line in (root / "episodes.jsonl").read_text().splitlines():
+    for line in (root / "episodes.jsonl").read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         r = json.loads(line)
@@ -113,7 +113,7 @@ def from_community_safety(root: Path = HERE / "data" / "community_safety") -> Sc
 
 # ---------------------------------------------------------------- ACH case files
 def from_ach(path: Path) -> Scenario:
-    d = yaml.safe_load(path.read_text())
+    d = yaml.safe_load(path.read_text(encoding="utf-8"))
     sid = path.stem
     risk = Risk(id="r1", text=d["description"].strip().split(". ")[0].rstrip(".") + ".")
     gt = {c["id"]: c for c in d.get("ground_truth", {}).get("claims", [])}
@@ -135,7 +135,7 @@ def from_ach(path: Path) -> Scenario:
 # ---------------------------------------------------------------- phase-1 cases
 def from_phase1(path: Path) -> list[Scenario]:
     out = []
-    for c in yaml.safe_load(path.read_text()):
+    for c in yaml.safe_load(path.read_text(encoding="utf-8")):
         cid, domain = c["id"], c.get("domain", "")
         dps = c["data_points"]
         eps = [Episode(id=f"{cid}-{p['id']}", text=" ".join(p["text"].split()), source="case record", credibility=0.85) for p in dps]
@@ -175,7 +175,7 @@ def discover(include_private: bool = True) -> list[Scenario]:
             if p.name.startswith("phase1"):
                 out += from_phase1(p)
             else:
-                head = yaml.safe_load(p.read_text())
+                head = yaml.safe_load(p.read_text(encoding="utf-8"))
                 if isinstance(head, dict) and "claims" in head and "episodes" in head:
                     out.append(from_ach(p))
     return out

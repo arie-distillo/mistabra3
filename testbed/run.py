@@ -97,8 +97,22 @@ def main(argv=None) -> int:
     ap.add_argument("--cache", help="SQLite file caching model outputs across runs")
     ap.add_argument("--out", default=str(HERE / "reports"))
     a = ap.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):   # Windows consoles default to cp1252; never crash on a character
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     if not a.live:
         os.environ["MISTABRA_FORCE_FAKE"] = "1"
+    else:
+        from mistabra_core import Settings
+        s = Settings.from_env()
+        if not s.uses_real_llm:
+            print("ERROR: --live needs a model. Set MISTABRA_PROVIDER (anthropic | openai), MISTABRA_MODEL, and MISTABRA_API_KEY "
+                  "(or MISTABRA_BASE_URL for a local endpoint); MISTABRA_FORCE_FAKE must be unset. "
+                  f"Now: provider={s.provider!r}, key={'set' if s.api_key else 'missing'}, base_url={s.base_url!r}, "
+                  f"force_fake={s.force_fake}.", file=sys.stderr)
+            return 2
     over = {"cache_path": Path(a.cache)} if a.cache else {}
     modes = ["judged", "noisy_or"] if a.compare else [a.standing or os.environ.get("MISTABRA_STANDING", "judged")]
     reports = [run({**over, "standing": m}, a.only) for m in modes]
@@ -106,9 +120,9 @@ def main(argv=None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     tag = f"{stamp}-{reports[0]['settings']['provider']}-{'compare' if a.compare else modes[0]}"
-    (out / f"{tag}.json").write_text(json.dumps(reports, indent=1, default=str))
+    (out / f"{tag}.json").write_text(json.dumps(reports, indent=1, default=str), encoding="utf-8")
     md = markdown(reports)
-    (out / f"{tag}.md").write_text(md)
+    (out / f"{tag}.md").write_text(md, encoding="utf-8")
     print("\n" + md)
     print(f"report: {out / tag}.json, .md")
     return 0
