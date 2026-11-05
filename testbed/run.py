@@ -41,16 +41,22 @@ HEADLINE = [
 
 def run(settings_overrides: dict, only: list[str], log=print) -> dict:
     from mistabra_core import Core, Settings
+    from mistabra_core.llm import LLMAuthError
     settings = Settings.from_env(**settings_overrides)
     core = Core(settings)
     scenarios = [s for s in discover() if not only or any(o in s.id for o in only)]
-    log(f"testbed provider={core.provider.name} model={settings.model} fast={settings.fast_model} standing={settings.standing} "
+    from mistabra_core.settings import describe_key
+    log(f"testbed provider={settings.provider} ({describe_key(settings.provider) if settings.uses_real_llm else 'offline'}) model={settings.model} fast={settings.fast_model} standing={settings.standing} "
         f"scenarios={len(scenarios)} steps={sum(len(s.steps) * (max(1, len(s.operational.hypotheses)) if s.per_hypothesis else 1) for s in scenarios)}")
     results, t0 = [], time.time()
     for i, sc in enumerate(scenarios, 1):
         log(f"[{i}/{len(scenarios)}] {sc.id} ({sc.kind}{', control' if sc.control else ''}) — {len(sc.steps)} steps  [{time.time() - t0:.0f}s]")
         try:
             results.append(run_scenario(core, sc, log=log))
+        except LLMAuthError as e:
+            log(f"STOPPED: the provider rejected the API key — {e}\n"
+                f"Check the key in .env (MISTABRA_API_KEY, or the provider's own variable) belongs to provider '{settings.provider}'.")
+            raise SystemExit(3)
         except Exception as e:  # noqa: BLE001 — a failed scenario is reported, the run continues
             from .harness import ScenarioResult
             results.append(ScenarioResult(id=sc.id, kind=sc.kind, control=sc.control, error=f"{type(e).__name__}: {e}"))
@@ -108,8 +114,9 @@ def main(argv=None) -> int:
         from mistabra_core import Settings
         s = Settings.from_env()
         if not s.uses_real_llm:
-            print("ERROR: --live needs a model. Set MISTABRA_PROVIDER (anthropic | openai), MISTABRA_MODEL, and MISTABRA_API_KEY "
-                  "(or MISTABRA_BASE_URL for a local endpoint); MISTABRA_FORCE_FAKE must be unset. "
+            print("ERROR: --live needs a model. Set MISTABRA_PROVIDER (anthropic | openrouter | openai), MISTABRA_MODEL, and the key in "
+                  "MISTABRA_API_KEY or the provider's own variable (ANTHROPIC_API_KEY | OPENROUTER_API_KEY | OPENAI_API_KEY; another "
+                  "service's key is never used), or MISTABRA_BASE_URL for a local endpoint; MISTABRA_FORCE_FAKE must be unset. "
                   f"Now: provider={s.provider!r}, key={'set' if s.api_key else 'missing'}, base_url={s.base_url!r}, "
                   f"force_fake={s.force_fake}.", file=sys.stderr)
             return 2

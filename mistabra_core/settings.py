@@ -28,6 +28,23 @@ def load_dotenv(start: Path | None = None) -> Path | None:
     return None
 
 
+KEY_VARS = {"anthropic": ["ANTHROPIC_API_KEY"], "openai": ["OPENAI_API_KEY"], "openrouter": ["OPENROUTER_API_KEY"]}
+
+
+def _key_for(provider: str, env) -> tuple[str | None, str | None]:
+    """The API key for this provider: MISTABRA_API_KEY first, then only the provider's own variable — never another
+    service's key. Returns (variable name, value)."""
+    for var in ["MISTABRA_API_KEY", *KEY_VARS.get(provider, [])]:
+        if env.get(var):
+            return var, env[var]
+    return None, None
+
+
+def describe_key(provider: str) -> str:
+    var, val = _key_for(provider, os.environ)
+    return f"{var}={val[:6]}…{val[-4:]}" if val and len(val) > 12 else (f"{var}=(short)" if val else "no key")
+
+
 def _truthy(v: str | None) -> bool:
     return (v or "").strip().lower() not in ("", "0", "false", "no")
 
@@ -67,7 +84,7 @@ class Settings:
             provider=e.get("MISTABRA_PROVIDER", "fake"),
             model=e.get("MISTABRA_MODEL", ""),
             fast_model=e.get("MISTABRA_FAST_MODEL", ""),
-            api_key=e.get("MISTABRA_API_KEY") or e.get("ANTHROPIC_API_KEY") or e.get("OPENAI_API_KEY") or e.get("OPENROUTER_API_KEY"),
+            api_key=_key_for(e.get("MISTABRA_PROVIDER", "fake"), e)[1],
             base_url=e.get("MISTABRA_BASE_URL"),
             force_fake=_truthy(e.get("MISTABRA_FORCE_FAKE")),
             cache_path=Path(e["MISTABRA_CACHE"]) if e.get("MISTABRA_CACHE") else None,

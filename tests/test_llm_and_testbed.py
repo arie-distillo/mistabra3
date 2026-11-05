@@ -135,3 +135,21 @@ def test_openrouter_provider_has_its_url():
     p = make_provider(s)
     assert isinstance(p, OpenAICompatibleProvider) and str(p.client.base_url).startswith("https://openrouter.ai/api/v1")
     assert s.model == "anthropic/claude-sonnet-4.5"
+
+
+def test_key_belongs_to_the_provider(monkeypatch):
+    from mistabra_core.settings import _key_for
+    env = {"OPENAI_API_KEY": "sk-openai", "ANTHROPIC_API_KEY": "sk-ant", "OPENROUTER_API_KEY": "sk-or"}
+    assert _key_for("openrouter", env) == ("OPENROUTER_API_KEY", "sk-or")
+    assert _key_for("anthropic", env) == ("ANTHROPIC_API_KEY", "sk-ant")
+    assert _key_for("openrouter", {"OPENAI_API_KEY": "sk-openai"}) == (None, None)       # never another service's key
+    assert _key_for("openai", {**env, "MISTABRA_API_KEY": "explicit"}) == ("MISTABRA_API_KEY", "explicit")
+
+
+def test_auth_error_not_retried(monkeypatch):
+    import httpx
+    from mistabra_core.llm.base import LLMAuthError, OpenAICompatibleProvider
+    p = OpenAICompatibleProvider("bad", "https://example.invalid/v1")
+    monkeypatch.setattr(p.client, "post", lambda *a, **k: httpx.Response(401, text='{"error":{"message":"User not found."}}'))
+    with pytest.raises(LLMAuthError):
+        _gw(p).call("radar.derive", V)

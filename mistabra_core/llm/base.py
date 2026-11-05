@@ -12,6 +12,8 @@ import httpx
 class LLMError(RuntimeError): ...
 class LLMOutputError(LLMError):
     """Model returned output that could not be parsed or validated. Not retried."""
+class LLMAuthError(LLMError):
+    """The provider rejected the credentials (HTTP 401/403). Not retried; nothing else will work either."""
 class LLMTransportError(LLMError):
     """Network / provider failure. Retried with backoff."""
 
@@ -36,6 +38,8 @@ class AnthropicProvider:
             raise LLMTransportError(str(e)) from None
         if r.status_code == 429 or r.status_code >= 500:
             raise LLMTransportError(f"HTTP {r.status_code}: {r.text[:200]}")
+        if r.status_code in (401, 403):
+            raise LLMAuthError(f"HTTP {r.status_code}: {r.text[:300]}")
         if r.status_code >= 400:
             raise LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
         j = r.json()
@@ -60,6 +64,8 @@ class OpenAICompatibleProvider:
             raise LLMTransportError(str(e)) from None
         if r.status_code == 429 or r.status_code >= 500:
             raise LLMTransportError(f"HTTP {r.status_code}: {r.text[:200]}")
+        if r.status_code in (401, 403):
+            raise LLMAuthError(f"HTTP {r.status_code}: {r.text[:300]}")
         if r.status_code >= 400:
             raise LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
         j = r.json()

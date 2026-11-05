@@ -17,7 +17,7 @@ import json
 import re
 import threading
 
-from .llm import Gateway, LLMError, Recorder, make_provider
+from .llm import Gateway, LLMAuthError, LLMError, Recorder, make_provider
 from .llm.prompts import TrajectoryDraft
 from .scoring import noisy_or, score_from, uses, weight_of
 from .settings import Settings
@@ -144,6 +144,8 @@ class Core:
                 try:
                     out = self.gw.call("radar.read", {"risk_text": risk.text, "radar_query": q, "episode_text": ep.text, "source": ep.source},
                                        recorder=run.rec)
+                except LLMAuthError:
+                    raise
                 except LLMError:
                     continue
                 if out.relevant and out.confidence >= self.settings.relevance_threshold:
