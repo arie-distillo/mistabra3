@@ -175,3 +175,15 @@ def test_key_belongs_to_the_provider(monkeypatch):
     assert _key_for("anthropic", env) == ("ANTHROPIC_API_KEY", "sk-ant")
     assert _key_for("openrouter", {"OPENAI_API_KEY": "sk-openai"}) == (None, None)       # never another service's key
     assert _key_for("openai", {**env, "MISTABRA_API_KEY": "explicit"}) == ("MISTABRA_API_KEY", "explicit")
+
+
+def test_nested_json_sent_as_strings_is_decoded():
+    """Qwen 3.5 via OpenRouter: nested objects and lists arrive as JSON-encoded strings (from a real failure log)."""
+    import json
+    args = json.dumps({"relevant": True,
+                       "signal": json.dumps({"actor": "weather service", "behaviour": "forecasting heavy rain", "entities": ["Northfield"]}),
+                       "trajectories": "\n" + json.dumps([{"hypothesis_id": None, "claim": "Heavy rain will overwhelm the drains.",
+                                                            "match_confidence": 0, "rationale": "r", "reach": 0.4, "fit": 0.3}]) + "\n"})
+    p = FakeProvider({"trajectory.abduce": args})
+    out = _gw(p).call("trajectory.abduce", {"x": 1})
+    assert out.signal.actor == "weather service" and out.trajectories[0].claim.startswith("Heavy rain") and len(p.calls) == 1

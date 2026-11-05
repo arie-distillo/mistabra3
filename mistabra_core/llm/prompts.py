@@ -7,11 +7,38 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------- output schemas
-class ContentOut(BaseModel):
+class Out(BaseModel):
+    """Base of every output schema. Some models (e.g. Qwen 3.5 via OpenRouter) send nested objects and lists inside tool
+    arguments as JSON-encoded strings — "signal": "{\"actor\": ...}". Such strings are decoded before validation."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _decode_embedded_json(cls, data):
+        if isinstance(data, str) and data.strip()[:1] in ("{", "["):
+            data = _loads(data)
+        if isinstance(data, dict):
+            data = {k: (_loads(v) if isinstance(v, str) and v.strip()[:1] in ("{", "[") and k in cls.model_fields
+                        and not _is_str_field(cls, k) else v) for k, v in data.items()}
+        return data
+
+
+def _loads(v: str):
+    try:
+        return json.loads(v.strip())
+    except ValueError:
+        return v
+
+
+def _is_str_field(cls, name: str) -> bool:
+    ann = cls.model_fields[name].annotation
+    return ann is str or str(ann) in ("str | None", "typing.Optional[str]")
+
+
+class ContentOut(Out):
     @field_validator("modifiers", "entities", mode="before", check_fields=False)
     @classmethod
     def _listify(cls, v):                 # a single string where a list is expected
@@ -27,11 +54,11 @@ class ContentOut(BaseModel):
     summary: str = ""
 
 
-class RadarDraft(BaseModel):
+class RadarDraft(Out):
     query: str
 
 
-class RadarsOut(BaseModel):
+class RadarsOut(Out):
     radars: list[RadarDraft] = Field(default_factory=list)
 
     @field_validator("radars", mode="before")
@@ -40,20 +67,20 @@ class RadarsOut(BaseModel):
         return [{"query": x} if isinstance(x, str) else x for x in v] if isinstance(v, list) else v
 
 
-class RadarReadOut(BaseModel):
+class RadarReadOut(Out):
     relevant: bool
     confidence: float = 0.5
     content: ContentOut | None = None
 
 
-class LambdaCheckOut(BaseModel):
+class LambdaCheckOut(Out):
     relevant: bool
     confidence: float = 0.5
     why: str = ""
     content: ContentOut | None = None
 
 
-class TrajectoryDraft(BaseModel):
+class TrajectoryDraft(Out):
     hypothesis_id: str | None = None       # a stored id, "given", or null for a new claim
     claim: str | None = None
     match_confidence: float = 0.0
@@ -64,32 +91,32 @@ class TrajectoryDraft(BaseModel):
     missing: list[str] = Field(default_factory=list)
 
 
-class AbduceOut(BaseModel):
+class AbduceOut(Out):
     relevant: bool = True
     signal: ContentOut | None = None
     trajectories: list[TrajectoryDraft] = Field(default_factory=list)
 
 
-class BaselineAssessed(BaseModel):
+class BaselineAssessed(Out):
     baseline_id: str
     fit: float
     ordinary_outcome: str = ""
     rationale: str = ""
 
 
-class BaselineNew(BaseModel):
+class BaselineNew(Out):
     claim: str
     ordinary_outcome: str = ""
     rationale: str = ""
     fit: float
 
 
-class BaselinesOut(BaseModel):
+class BaselinesOut(Out):
     assessed: list[BaselineAssessed] = Field(default_factory=list)
     new: list[BaselineNew] = Field(default_factory=list)
 
 
-class StandingOut(BaseModel):
+class StandingOut(Out):
     value: float
     rationale: str = ""
 
@@ -105,7 +132,8 @@ class Prompt:
 
     def render(self, variables: dict) -> tuple[str, str]:
         user = (f"TASK: {self.id}\n\n{self.instructions}\n\nINPUT_JSON:\n{json.dumps(variables, ensure_ascii=False, indent=1, sort_keys=True)}\n\n"
-                "Respond with a single JSON object matching the schema and nothing else.")
+                "Answer by calling the output tool. Pass nested objects and lists as JSON objects and arrays, "
+                "never as strings containing JSON.")
         return self.system, user
 
 
