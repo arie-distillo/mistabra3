@@ -112,3 +112,18 @@ def test_full_offline_run_produces_every_metric():
     m = rep["metrics"]
     assert set(m) == {"A1_score", "A2_lambda", "A3_combination", "A4_matching", "A5_stability", "A6_self_reinforcement", "R1_ach", "E_expectations"}
     assert all(not s["error"] for s in rep["scenarios"]) and rep["llm"]["errors"] == 0
+
+
+def test_dotenv_loaded_from_parent_without_overriding(tmp_path, monkeypatch):
+    from mistabra_core.settings import load_dotenv
+    (tmp_path / ".env").write_text("# comment\nMISTABRA_T_A=one   # trailing\nexport MISTABRA_T_B='two words'\nMISTABRA_T_C=x\n", encoding="utf-8")
+    sub = tmp_path / "a" / "b"
+    sub.mkdir(parents=True)
+    monkeypatch.setenv("MISTABRA_T_C", "kept")
+    for k in ("MISTABRA_T_A", "MISTABRA_T_B"):
+        monkeypatch.delenv(k, raising=False)
+    assert load_dotenv(sub) == tmp_path / ".env"
+    import os
+    assert (os.environ["MISTABRA_T_A"], os.environ["MISTABRA_T_B"], os.environ["MISTABRA_T_C"]) == ("one", "two words", "kept")
+    for k in ("MISTABRA_T_A", "MISTABRA_T_B"):
+        monkeypatch.delenv(k)

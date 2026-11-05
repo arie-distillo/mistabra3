@@ -8,3 +8,6 @@ build/
 testbed/reports/
 testbed/private/
 .cache/
+.env
+.env.*
+!.env.example

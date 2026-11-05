@@ -5,6 +5,29 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+def load_dotenv(start: Path | None = None) -> Path | None:
+    """Load MISTABRA_* style variables from the first `.env` found in `start` (default: the current directory) or its
+    parents. Variables already set in the environment win. Returns the file used, if any. No dependency needed."""
+    here = (start or Path.cwd()).resolve()
+    for d in (here, *here.parents):
+        f = d / ".env"
+        if f.is_file():
+            for line in f.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip().removeprefix("export ").strip()
+                v = v.strip()
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+                    v = v[1:-1]
+                elif " #" in v:
+                    v = v.split(" #", 1)[0].strip()
+                os.environ.setdefault(k, v)
+            return f
+    return None
+
+
 def _truthy(v: str | None) -> bool:
     return (v or "").strip().lower() not in ("", "0", "false", "no")
 
@@ -37,6 +60,8 @@ class Settings:
 
     @classmethod
     def from_env(cls, **overrides) -> "Settings":
+        """Settings from MISTABRA_* environment variables, after loading a `.env` file if one is found."""
+        load_dotenv()
         e = os.environ
         s = cls(
             provider=e.get("MISTABRA_PROVIDER", "fake"),
