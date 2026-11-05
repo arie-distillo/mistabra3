@@ -52,7 +52,7 @@ pip install -e ".[dev]"
 LLM setup is uniform: provider, models, key and base URL from the environment (or `Settings(...)` in code).
 
 ```bash
-export MISTABRA_PROVIDER=anthropic            # anthropic | openai (any OpenAI-compatible endpoint) | fake
+export MISTABRA_PROVIDER=anthropic            # anthropic | openrouter | openai (any OpenAI-compatible endpoint) | fake
 export MISTABRA_MODEL=claude-sonnet-4-5       # reasoning tier: abduction, baselines, standing
 export MISTABRA_FAST_MODEL=claude-haiku-4-5   # operational tier: radar reads, Lambda-signal check
 export MISTABRA_API_KEY=...

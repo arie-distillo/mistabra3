@@ -67,6 +67,9 @@ class OpenAICompatibleProvider:
         return j["choices"][0]["message"]["content"] or "", (u.get("prompt_tokens"), u.get("completion_tokens"))
 
 
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+
+
 def make_provider(settings) -> LLM:
     from .fake import FakeProvider
     if not settings.uses_real_llm:
@@ -75,4 +78,6 @@ def make_provider(settings) -> LLM:
         return AnthropicProvider(settings.api_key, settings.base_url, settings.timeout_s)
     if settings.provider == "openai":
         return OpenAICompatibleProvider(settings.api_key, settings.base_url, settings.timeout_s)
-    raise ValueError(f"unknown provider {settings.provider!r} (expected fake | anthropic | openai)")
+    if settings.provider == "openrouter":
+        return OpenAICompatibleProvider(settings.api_key, settings.base_url or OPENROUTER_URL, settings.timeout_s)
+    raise ValueError(f"unknown provider {settings.provider!r} (expected fake | anthropic | openai | openrouter)")

@@ -40,7 +40,7 @@ class Settings:
     `fast_model` (operational tier) pick the models, `api_key` and `base_url` pass through.
     `force_fake` wins over any key, so tests can never reach a paid model.
     """
-    provider: str = "fake"                  # fake | anthropic | openai (any OpenAI-compatible endpoint)
+    provider: str = "fake"                  # fake | anthropic | openai (any OpenAI-compatible endpoint) | openrouter
     model: str = ""                         # reasoning tier: abduction, baselines, standing
     fast_model: str = ""                    # operational tier: radar reads, Lambda-signal check (defaults to model)
     api_key: str | None = None
@@ -80,7 +80,7 @@ class Settings:
 
     def __post_init__(self):
         if not self.model:
-            self.model = {"anthropic": "claude-sonnet-4-5", "openai": "gpt-4o"}.get(self.provider, "fake-model")
+            self.model = {"anthropic": "claude-sonnet-4-5", "openai": "gpt-4o", "openrouter": "anthropic/claude-sonnet-4.5"}.get(self.provider, "fake-model")
         if not self.fast_model:
             self.fast_model = self.model
         if self.standing not in ("judged", "noisy_or"):

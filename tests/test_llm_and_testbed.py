@@ -127,3 +127,11 @@ def test_dotenv_loaded_from_parent_without_overriding(tmp_path, monkeypatch):
     assert (os.environ["MISTABRA_T_A"], os.environ["MISTABRA_T_B"], os.environ["MISTABRA_T_C"]) == ("one", "two words", "kept")
     for k in ("MISTABRA_T_A", "MISTABRA_T_B"):
         monkeypatch.delenv(k)
+
+
+def test_openrouter_provider_has_its_url():
+    from mistabra_core.llm.base import OpenAICompatibleProvider, make_provider
+    s = Settings(provider="openrouter", api_key="k")
+    p = make_provider(s)
+    assert isinstance(p, OpenAICompatibleProvider) and str(p.client.base_url).startswith("https://openrouter.ai/api/v1")
+    assert s.model == "anthropic/claude-sonnet-4.5"
