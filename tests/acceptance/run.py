@@ -29,7 +29,8 @@ def run(m, testdata: Path, log: Log, live: bool):
     log.step(1, "Context in, risks from a sentence, radars derived")
     for p in sorted((testdata / "context").glob("*.md")): m.context.create_file(p, actor)
     risks = json.loads((testdata / "risks.json").read_text())
-    attack = m.risks.create(risks[0]["text"], actor, open=True)
+    attack = m.risks.create(risks[0]["text"], actor)
+    m.risks.create(risks[1]["text"], actor)
     radars = log.timed("radars.derive", lambda: m.radars.derive(attack.id, actor))
     log.info("radars: " + " | ".join(r.query[:60] for r in radars))
     log.check(3 <= len(radars) <= 6 and all(r.origin == "system" for r in radars), "3-6 radars derived from the risk sentence", len(radars))
@@ -71,10 +72,12 @@ def run(m, testdata: Path, log: Log, live: bool):
     if live: log.info(f"ordering neg01 < ep01 < ep02 < ep03: {ordered} (measured, not gated)")
     else: log.check(ordered, "hard negative < weak < repeated < concealed")
 
-    log.step(5, "Lambda: open risk raises a signal no radar anticipated, and nowhere else")
+    log.step(5, "Lambda signals: an episode no radar anticipated is checked against every risk and lands on the right one")
     lam = [s for seed, ss in sig.items() for s in ss if s.via == "lambda"]
     log.info("lambda signals on: " + ", ".join(seed for seed, ss in sig.items() if any(s.via == "lambda" for s in ss)))
     log.check(any(s.via == "lambda" for s in sig["ep16"]), "fly-through episode raised a Lambda signal")
+    other = [r for r in m.risks.list() if r.id != attack.id][0]
+    log.check(not any(s.via == "lambda" for s in m.signals.list(risk_id=other.id)), "no Lambda signal on the unrelated risk")
     neg = {seed for seed, l in labels.items() if l.get("expect_signal") is False or l.get("hard_negative")}
     bad = [seed for seed in neg if any(s.via == "lambda" for s in sig[seed])]
     if live: log.info(f"lambda signals on labelled negatives: {bad} (measured, not gated)")

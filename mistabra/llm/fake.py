@@ -92,9 +92,9 @@ class FakeProvider:
         missing = [] if any(k in d["episode_text"].lower() for k in ("photograph", "filmed", "bought", "posted", "asked", "sketched", "timed", "shared", "wrote", "compiled", "purchased", "parked")) else ["what exactly happened"]
         return {"relevant": True, "confidence": 0.8, "content": self._content(d["episode_text"], d["risk_text"]), "missing": missing}
 
-    def _risk_open_check(self, d):
-        low = d["episode_text"].lower()
-        rel = any(k in low for k in ("community centre", "place of worship", "community school", "members of community", "community x")) and len(low) > 40
+    def _signal_lambda_check(self, d):
+        low, risk = d["episode_text"].lower(), d["risk_text"].lower()
+        rel = ("community" in risk and any(k in low for k in ("community centre", "place of worship", "community school", "members of community", "community x")) and len(low) > 40)
         return {"relevant": rel, "confidence": 0.6 if rel else 0.9, "why": "mentions a community institution in an unusual way" if rel else "",
                 "content": self._content(d["episode_text"], d["risk_text"]) if rel else None}
 
@@ -109,10 +109,31 @@ class FakeProvider:
         actor = content.get("actor") or "the actor"
         claim = f"{target} is a target of hostile preparation" if reach < 0.7 else f"{actor} intends to harm the community"
         existing = {h["claim"].lower(): h["id"] for h in d.get("existing_hypotheses", [])}
+        if d.get("force_new"):
+            claim, existing = f"{target} is being studied remotely, through models and recordings, to plan access", {}
         hid = existing.get(claim.lower())
         return {"hypothesis_id": hid, "claim": None if hid else claim, "reach": reach, "fit": fit,
                 "rationale": f"The episode shows {content.get('behaviour') or 'behaviour'} toward {target}; if {claim.lower()}, this is a step toward: {d['risk_text']}.",
-                "entities": content.get("entities", []), "missing": ["occurrence time"] if d.get("occurred_kind") == "unknown" else []}
+                "entities": content.get("entities", []), "missing": ["occurrence time"] if d.get("occurred_kind") == "unknown" else [],
+                "predicts": ["repeated observation of the same target", "attempt to learn routines or access"] if reach < 0.7 else ["acquisition of means", "rehearsal at the site"]}
+
+    def _decision_setwise(self, d):
+        """Posterior from the abduction's fits, nudged by what is already attached (state) — plumbing, not judgment.
+        A 3D fly-through (photogrammetry) is treated as unexplained by any pre-existing hypothesis: mass goes to none."""
+        ab, low = d["abduction"], d["episode"]["text"].lower()
+        fits = {b["claim"].strip().lower(): b["fit"] for b in ab["baselines"]}
+        w = {}
+        for h in d["hypotheses"]:
+            if h["kind"] == "risk":
+                base = ab["fit"] if h["id"] == ab["hypothesis_id"] else 0.05
+                w[h["id"]] = min(1.0, base * (1 + 0.1 * len(h["attached"])) if base >= 0.3 else base)   # state helps only an episode that itself fits
+            else:
+                w[h["id"]] = fits.get(h["claim"].strip().lower(), 0.05)
+        unexplained = "fly-through" in low and ab["hypothesis_id"] != "new"
+        w[d["none_id"]] = 3.0 if unexplained else max(0.0, 1.0 - max(w.values()))
+        z = sum(w.values())
+        return {"distribution": {k: round(v / z, 4) for k, v in w.items()},
+                "rationale": "fake: fits plus attached-signal bonus; none when nothing in the set anticipates the episode"}
 
     def _trajectory_baseline(self, d):
         low = d["episode_text"].lower()

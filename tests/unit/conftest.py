@@ -21,9 +21,9 @@ def m(tmp_path):
 
 @pytest.fixture
 def ready(m):
-    """Context, one open risk with derived radars, one source."""
+    """Context, one risk with derived radars, one source."""
     m.context.create("Community X in Northfield; institutions: Community Centre on Maple Road, Place of Worship on Church Lane.", "a", title="about")
-    risk = m.risks.create("Hateful radicals attack members of Community X.", "a", open=True)
+    risk = m.risks.create("Hateful radicals attack members of Community X.", "a")
     m.radars.derive(risk.id, "a")
     m.sources.create("Field reports", "a", credibility=0.8)
     return risk

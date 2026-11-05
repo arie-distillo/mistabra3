@@ -14,7 +14,7 @@ def load_testdata(m, testdata: Path | str, actor: str = "bench", log=print) -> d
         m.context.create_file(p, actor)
     risks = {}
     for r in json.loads((td / "risks.json").read_text()):
-        risk = m.risks.create(r["text"], actor, open=r.get("open", False))
+        risk = m.risks.create(r["text"], actor)
         n = len(m.radars.derive(risk.id, actor))
         risks[r["key"]] = risk.id
         log(f"[bench] risk {r['key']}: {n} radars derived")
@@ -82,7 +82,7 @@ def run_benchmark(m, testdata: Path | str, log=print) -> dict:
         "orderings_satisfied": _ratio(res["orderings"]), "lambda_detected": res["lambda"],
         "lambda_precision": round(lam_pos / len(lam), 2) if lam else None, "lambda_signals": len(lam),
         "missing_flagged": _ratio([x for x in res["missing"] if x is not None]), "accumulation": res["accumulation"],
-        "llm": m.stats()["llm"], "provider": m.provider.name, "model": m.settings.model,
+        "llm": m.stats()["llm"], "provider": m.provider.name, "model": m.settings.model, "decision": m.settings.decision,
     }
     for k, v in summary.items():
         log(f"[bench] {k}: {v}")

@@ -41,17 +41,20 @@ class AuditAPI:
 class LearnAPI:
     def __init__(self, engine: Engine, store: Store): self.engine, self.store = engine, store
 
-    def replay(self, signal_ids, actor: str, *, model: str | None = None, prompt_version: str | None = None) -> dict:
-        """Re-reason the given signals with the current (or specified) model/prompts without persisting; diff against stored."""
+    def replay(self, signal_ids, actor: str, *, model: str | None = None, prompt_version: str | None = None, decision: str | None = None) -> dict:
+        """Re-reason the given signals with the current (or specified) model/prompts/decision model without persisting; diff against stored.
+        `decision=` runs another decision model on the same signals — the comparison the decision-model spike is built on."""
         rows = []
         for sid in signal_ids:
             s = self.store.one("SELECT strength_system, metrics_json FROM signal WHERE id=?", (sid,))
-            new = self.engine.reason(sid, actor, persist=False, model=model, prompt_version=prompt_version)
+            new = self.engine.reason(sid, actor, persist=False, model=model, prompt_version=prompt_version, decision=decision)
             rows.append({"signal_id": sid, "stored": s["strength_system"], "replayed": new["strength"],
                          "delta": None if s["strength_system"] is None else round(new["strength"] - s["strength_system"], 3),
-                         "stored_metrics": json.loads(s["metrics_json"]) if s["metrics_json"] else None, "replayed_metrics": new["metrics"]})
+                         "stored_metrics": json.loads(s["metrics_json"]) if s["metrics_json"] else None, "replayed_metrics": new["metrics"],
+                         "posterior": new["posterior"], "none": new["none"], "info_gain": new["info_gain"], "lambda_hypothesis": new["lambda_hypothesis"]})
         deltas = [abs(r["delta"]) for r in rows if r["delta"] is not None]
-        return {"rows": rows, "mean_abs_delta": round(sum(deltas) / len(deltas), 3) if deltas else None, "model": model, "prompt_version": prompt_version}
+        return {"rows": rows, "mean_abs_delta": round(sum(deltas) / len(deltas), 3) if deltas else None, "model": model, "prompt_version": prompt_version,
+                "decision": decision or self.engine.settings.decision}
 
 
 class Mistabra:
@@ -79,7 +82,9 @@ class Mistabra:
         return {"context": c("context_item"), "risks": c("risk"), "radars": c("radar"), "episodes": c("episode"), "signals": c("signal"),
                 "signals_lambda": self.store.one("SELECT COUNT(*) AS n FROM signal WHERE via='lambda'")["n"],
                 "trajectories": c("trajectory"), "hypotheses": self.store.one("SELECT COUNT(*) AS n FROM hypothesis WHERE status!='ordinary'")["n"],
+                "hypotheses_lambda": self.store.one("SELECT COUNT(*) AS n FROM hypothesis WHERE is_lambda=1")["n"],
                 "audit_events": c("audit"), "llm_calls": c("llm_call"), "llm": dict(self.gateway.stats),
+                "posteriors": c("posterior"), "decision": self.settings.decision,
                 "provider": self.provider.name, "model": self.settings.model, "fast_model": self.settings.fast_model, "blind": self.settings.blind}
 
     def close(self):

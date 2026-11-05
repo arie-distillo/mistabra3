@@ -7,7 +7,7 @@ from pathlib import Path
 def main(argv=None):
     p = argparse.ArgumentParser(prog="mistabra")
     sub = p.add_subparsers(dest="cmd", required=True)
-    b = sub.add_parser("bench"); b.add_argument("data_dir", nargs="?"); b.add_argument("--testdata", default=str(Path(__file__).resolve().parents[1] / "testdata")); b.add_argument("--json", action="store_true")
+    b = sub.add_parser("bench"); b.add_argument("data_dir", nargs="?"); b.add_argument("--testdata", default=str(Path(__file__).resolve().parents[1] / "testdata")); b.add_argument("--json", action="store_true"); b.add_argument("--decision", choices=["pairwise", "setwise"])
     s = sub.add_parser("stats"); s.add_argument("data_dir")
     g = sub.add_parser("signals"); g.add_argument("data_dir"); g.add_argument("--unblind", action="store_true")
     a = p.parse_args(argv)
@@ -16,8 +16,8 @@ def main(argv=None):
     if a.cmd == "bench":
         tmp = a.data_dir is None
         data_dir = a.data_dir or tempfile.mkdtemp(prefix="mistabra-bench-")
-        m = Mistabra(data_dir, Settings.from_env(data_dir))
-        print(f"provider={m.provider.name} model={m.settings.model} fast_model={m.settings.fast_model} data_dir={data_dir}", flush=True)
+        m = Mistabra(data_dir, Settings.from_env(data_dir, **({"decision": a.decision} if a.decision else {})))
+        print(f"provider={m.provider.name} model={m.settings.model} fast_model={m.settings.fast_model} decision={m.settings.decision} data_dir={data_dir}", flush=True)
         from .eval import run_benchmark
         out = run_benchmark(m, a.testdata, log=lambda x: print(x, flush=True))
         if a.json: print(json.dumps(out["summary"], indent=1))

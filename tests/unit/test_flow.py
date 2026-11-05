@@ -14,6 +14,17 @@ def test_episode_creates_signal_trajectories_and_hypothesis(m, ready):
     assert len(m.hypotheses.list(risk_id=ready.id)) == 1
 
 
+def test_system_hypothesis_is_lambda_with_predictions(m, ready):
+    """A hypothesis the abducer creates because none explained the signal is a Lambda hypothesis and says what it predicts."""
+    m.episodes.create(HOUSE, "host", source="Field reports")
+    h = m.hypotheses.list(risk_id=ready.id)[0]
+    assert h.is_lambda and h.origin == "system" and len(h.predicts) >= 1
+    assert m.hypotheses.list(risk_id=ready.id, is_lambda=True) == [h]
+    assert all(not b.is_lambda for b in m.hypotheses.list(risk_id=ready.id, status="ordinary"))
+    ev = [e for e in m.audit.events(object_type="hypothesis", object_id=h.id) if e["action"] == "hypothesis.created"][0]
+    assert ev["after"]["is_lambda"] is True
+
+
 def test_idempotent_episode(m, ready):
     a = m.episodes.create(HOUSE, "host", source="Field reports"); b = m.episodes.create(" " + HOUSE + " ", "host", source="Field reports")
     assert a.id == b.id and m.stats()["signals"] == 1
@@ -33,12 +44,14 @@ def test_no_signal_for_unrelated_episode(m, ready):
     assert m.signals.list(episode_id=ep.id) == []
 
 
-def test_lambda_signal_only_for_open_risk(m, ready):
-    closed = m.risks.create("Burglars target homes in Riverside.", "a", open=False)
+def test_lambda_signal_on_the_right_risk(m, ready):
+    """No radar anticipated the episode; every risk is checked and only the one it could serve gets a Lambda signal."""
+    other = m.risks.create("Burglars target homes in Riverside.", "a")
     ep = m.episodes.create(FLYTHROUGH, "host", source="Field reports")
     sigs = m.signals.list(episode_id=ep.id)
     assert [s.via for s in sigs] == ["lambda"] and sigs[0].risk_id == ready.id and sigs[0].note
-    assert m.signals.list(risk_id=closed.id) == []
+    assert m.signals.list(risk_id=other.id) == []
+    assert {c["task"] for c in m.audit.trace(sigs[0].id)["llm_calls"]} >= {"signal.lambda_check"}
 
 
 def test_strength_ordering_and_hard_negative(m, ready):
@@ -104,7 +117,6 @@ def test_dismiss_and_list_filters(m, ready):
 def test_radar_update_disables(m, ready):
     for r in m.radars.list(ready.id):
         m.radars.update(r.id, "a", enabled=False)
-    m.risks.update(ready.id, "a", open=False)
     ep = m.episodes.create(HOUSE, "host", source="Field reports")
     assert m.signals.list(episode_id=ep.id) == []
     assert any(e["action"] == "radar.updated" for e in m.audit.events(object_type="radar"))
