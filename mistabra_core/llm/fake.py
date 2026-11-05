@@ -151,7 +151,7 @@ class FakeProvider:
     def __init__(self, overrides: dict | None = None):
         self.overrides, self.calls = overrides or {}, []
 
-    def complete(self, model, system, user, max_tokens):
+    def complete(self, model, system, user, max_tokens, schema=None):
         task, d = _task(user), _input(user)
         self.calls.append(task)
         if task in self.overrides:

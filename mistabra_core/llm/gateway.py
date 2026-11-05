@@ -86,7 +86,7 @@ class Gateway:
                 cached = True
                 self.stats["cached"] += 1
             else:
-                text, tokens = self._complete(model, system, user, max_tokens)
+                text, tokens = self._complete(model, system, user, max_tokens, p.schema.model_json_schema())
                 self.stats["calls"] += 1
             parsed = self._parse(text, p.schema)
             if not cached:
@@ -101,11 +101,11 @@ class Gateway:
             raise err
         return parsed
 
-    def _complete(self, model, system, user, max_tokens, attempts=3):
+    def _complete(self, model, system, user, max_tokens, schema=None, attempts=3):
         last = None
         for i in range(attempts):
             try:
-                return self.provider.complete(model, system, user, max_tokens)
+                return self.provider.complete(model, system, user, max_tokens, schema)
             except LLMTransportError as e:
                 last = e
                 time.sleep(min(0.5 * 2 ** i, 4))

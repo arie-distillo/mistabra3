@@ -169,3 +169,24 @@ def test_empty_output_explains_thinking_budget(monkeypatch):
     with pytest.raises(LLMOutputError, match="MISTABRA_REASONING"):
         _gw(p).call("radar.derive", V)
     assert sent["reasoning"] == {"enabled": False} and sent["max_tokens"] == 4000
+
+
+def test_bare_string_radars_accepted():
+    gw = _gw(FakeProvider({"radar.derive": '{"radars": ["Does the episode report a blocked culvert?", {"query": "q2"}]}'}))
+    out = gw.call("radar.derive", V)
+    assert [r.query for r in out.radars] == ["Does the episode report a blocked culvert?", "q2"]
+
+
+def test_schema_sent_as_response_format(monkeypatch):
+    import httpx
+    from mistabra_core.llm.base import OpenAICompatibleProvider
+    p = OpenAICompatibleProvider("k", "https://openrouter.ai/api/v1")
+    sent = {}
+
+    def post(path, json):
+        sent.update(json)
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"radars": [{"query": "q"}]}'}}], "usage": {}})
+    monkeypatch.setattr(p.client, "post", post)
+    _gw(p).call("radar.derive", V)
+    rf = sent["response_format"]
+    assert rf["type"] == "json_schema" and "radars" in rf["json_schema"]["schema"]["properties"]

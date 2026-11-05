@@ -7,11 +7,16 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------- output schemas
 class ContentOut(BaseModel):
+    @field_validator("modifiers", "entities", mode="before", check_fields=False)
+    @classmethod
+    def _listify(cls, v):                 # a single string where a list is expected
+        return [v] if isinstance(v, str) else (v or [])
+
     actor: str | None = None
     behaviour: str | None = None
     target: str | None = None
@@ -28,6 +33,11 @@ class RadarDraft(BaseModel):
 
 class RadarsOut(BaseModel):
     radars: list[RadarDraft] = Field(default_factory=list)
+
+    @field_validator("radars", mode="before")
+    @classmethod
+    def _strings_are_queries(cls, v):   # some models return ["query", ...] instead of [{"query": ...}]
+        return [{"query": x} if isinstance(x, str) else x for x in v] if isinstance(v, list) else v
 
 
 class RadarReadOut(BaseModel):
