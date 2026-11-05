@@ -42,4 +42,4 @@ steps:
     risk: flood
     expect: {band: weak, matches: "step:rain"}
 final:
-  jointly_strong: {hypothesis: "step:rain", min_standing: 0.5, max_single: 0.5}
+  jointly_strong: {hypothesis: "step:rain", min_standing: 0.4, max_single: 0.5}

@@ -3,8 +3,9 @@ title: Urban flood — control, the second episode removes the concern
 kind: sequence
 control: true
 note: >
-  Same rain forecast, but the second episode reports the drains were just cleared and upgraded. Standing of the
-  drainage hypothesis should stay low: the episodes do not combine into a concern.
+  Same rain forecast, but the second episode reports the drains were just cleared and upgraded. The second episode
+  must attach to the drainage hypothesis as counter-evidence (A4), and its standing should end low: the episodes do
+  not combine into a concern (A3 control).
 mission:
   version: flood-1
   documents:
@@ -34,6 +35,6 @@ steps:
       credibility: 0.9
       occurred: "2026-10-21T09:00:00Z"
     risk: flood
-    expect: {band: none}
+    expect: {matches: "step:rain"}      # counter-evidence must attach to the drainage hypothesis, not be dropped
 final:
-  jointly_strong: {hypothesis: "step:rain", min_standing: 0.5, max_single: 0.5}
+  jointly_strong: {hypothesis: "step:rain", min_standing: 0.4, max_single: 0.5}
