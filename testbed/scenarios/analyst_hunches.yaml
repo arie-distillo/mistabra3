@@ -1,0 +1,84 @@
+id: analyst_hunches
+title: Analyst input patterns — Lambda signals and Lambda hypotheses from the analyst's side
+kind: analyst
+note: >
+  Patterns 2, 3, 5, 7 and 8 against the Community Safety mission. Checks that given elements are kept, that a link
+  the analyst senses but does not state is articulated (Lambda signal), that "this matters, I don't know why"
+  produces a Lambda hypothesis when nothing stored fits and a match when something does, and that a rejected
+  hypothesis is not proposed again.
+mission:
+  version: cs-hunches-1
+  documents:
+    - title: About
+      text: >
+        The Community Safety Trust supports the members and institutions of Community X in Northfield: the
+        Community Centre on Maple Road, the Place of Worship on Church Lane, the Northfield Community School.
+        Members live mainly in Riverside (Elm Street, Maple Road). The harvest festival is held at the Community
+        Centre each August.
+  risks:
+    - id: attack
+      text: Hateful radicals attack members of Community X, their homes, or community institutions.
+    - id: fraud
+      text: The Trust's renovation tender is captured by a single bidder through front companies.
+operational:
+  hypotheses:
+    - {id: H_centre, risk_id: attack, claim: "The Community Centre is a target of hostile preparation", origin: analyst, status: open}
+    - {id: H_elm, risk_id: attack, claim: "Homes on Elm Street are a target of hostile preparation", origin: analyst, status: open}
+    - {id: H_rejected, risk_id: attack, claim: "The Place of Worship is a target of hostile preparation", origin: analyst, status: rejected}
+steps:
+  - label: doors
+    note: pattern 3 — the analyst senses the link to H_centre without stating it
+    episode:
+      text: A volunteer at the Community Centre reports that an unknown visitor asked which side doors stay unlocked during events.
+      source: Field reports
+      credibility: 0.8
+      occurred: "2026-08-10T17:00:00Z"
+    hypothesis: H_centre
+    expect: {lambda_signal: true, hypothesis_source: given, band: strong}
+  - label: bidders
+    note: pattern 2 — "this matters, I don't know what it means"; nothing stored fits
+    episode:
+      text: Two of the five bids for the Community Centre renovation list the same three directors and the same registered office.
+      source: tender records
+      credibility: 0.9
+      occurred: "2026-09-02T10:00:00Z"
+    signal: "The same three directors appear on two supposedly independent bidders."
+    expect: {lambda_hypothesis: true}
+  - label: elm_again
+    note: pattern 2 — analyst's signal, and a stored hypothesis fits it
+    episode:
+      text: A man with a long-lens camera photographed the doors and windows of two houses on Elm Street from a parked car.
+      source: Field reports
+      credibility: 0.8
+      occurred: "2026-08-11T21:30:00Z"
+    signal: "Night photography of members' homes on Elm Street from a car."
+    expect: {lambda_hypothesis: false, matches: H_elm}
+  - label: full
+    note: pattern 8 — the analyst's full trajectory; nothing is completed
+    episode:
+      text: Karl Brandt posted that the harvest festival would be a good day for the community to learn a lesson.
+      source: Social media monitoring
+      credibility: 0.5
+      occurred: "2026-08-12T22:00:00Z"
+    signal:
+      content: {actor: Karl Brandt, behaviour: veiled threat naming the festival, target: Community Centre, modifiers: [explicit_intent]}
+    hypothesis: H_centre
+    risk: attack
+    expect: {lambda_signal: false, lambda_hypothesis: false, hypothesis_source: given}
+  - label: inconsistent
+    note: pattern 7 — a stored hypothesis given under another risk
+    episode:
+      text: A delivery van was parked on Elm Street for ten minutes.
+      source: Field reports
+      credibility: 0.8
+    hypothesis: H_elm
+    risk: fraud
+    expect: {inconsistency: true}
+  - label: worship_photo
+    note: pattern 1 — supports a rejected hypothesis; not proposed again under scope given
+    episode:
+      text: Someone repeatedly photographed the entrances of the Place of Worship on Church Lane at night from across the street.
+      source: Field reports
+      credibility: 0.8
+      occurred: "2026-08-13T23:10:00Z"
+    expect: {not_articulated_like: H_rejected}
