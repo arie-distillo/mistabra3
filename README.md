@@ -95,6 +95,6 @@ support). A3's refutation cases are where the two should differ most.
 
 ## History
 
-The previous PoC (`mistabra/` package, SQLite store, facade APIs `risks`, `radars`, `signals`, …) is tagged
-`poc-0.2`. Reused from it, adapted: provider abstraction, gateway, prompts, fake provider, the score formula and
+The previous PoC (`mistabra/` package, SQLite store, facade APIs `risks`, `radars`, `signals`, …) is kept on the
+branch `legacy/poc-0.2`. Reused from it, adapted: provider abstraction, gateway, prompts, fake provider, the score formula and
 the labelled community-safety data. Its storage and facade belong to the other layer and are not carried over.
