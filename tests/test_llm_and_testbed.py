@@ -153,3 +153,19 @@ def test_auth_error_not_retried(monkeypatch):
     monkeypatch.setattr(p.client, "post", lambda *a, **k: httpx.Response(401, text='{"error":{"message":"User not found."}}'))
     with pytest.raises(LLMAuthError):
         _gw(p).call("radar.derive", V)
+
+
+def test_empty_output_explains_thinking_budget(monkeypatch):
+    import httpx
+    from mistabra_core.llm.base import OpenAICompatibleProvider
+    p = OpenAICompatibleProvider("k", "https://openrouter.ai/api/v1", reasoning="none")
+    sent = {}
+
+    def post(path, json):
+        sent.update(json)
+        return httpx.Response(200, json={"choices": [{"finish_reason": "length", "message": {"content": "", "reasoning": "hmm..."}}],
+                                         "usage": {"completion_tokens": 4000}})
+    monkeypatch.setattr(p.client, "post", post)
+    with pytest.raises(LLMOutputError, match="MISTABRA_REASONING"):
+        _gw(p).call("radar.derive", V)
+    assert sent["reasoning"] == {"enabled": False} and sent["max_tokens"] == 4000

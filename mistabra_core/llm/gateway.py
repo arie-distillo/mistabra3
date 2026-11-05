@@ -73,9 +73,10 @@ class Gateway:
     def version_of(task: str) -> str:
         return PROMPTS[task].version
 
-    def call(self, task: str, variables: dict, *, recorder: Recorder | None = None, max_tokens: int = 2500) -> BaseModel:
+    def call(self, task: str, variables: dict, *, recorder: Recorder | None = None, max_tokens: int | None = None) -> BaseModel:
         p = PROMPTS[task]
         system, user = p.render(variables)
+        max_tokens = max_tokens or self.settings.max_tokens
         model = self.model_for(p.tier)
         key = hashlib.sha256(f"{p.id}|{p.version}|{self.provider.name}|{model}|{user}".encode()).hexdigest()
         t0, cached, tokens, parsed, err = time.perf_counter(), False, (None, None), None, None

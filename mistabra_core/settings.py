@@ -65,6 +65,8 @@ class Settings:
     force_fake: bool = False
     timeout_s: float = 120.0
     cache_path: Path | None = None          # optional on-disk cache of model outputs (SQLite); in-memory otherwise
+    max_tokens: int = 4000                  # per call; thinking models count their reasoning against it
+    reasoning: str | None = None            # None = model default | none | low | medium | high (openai / openrouter)
 
     standing: str = "judged"                # judged (reasoning model weighs the attached trajectories) | noisy_or (baseline)
     proposed_weight: float = 0.5            # weight of a `proposed` trajectory in standing; confirmed = 1, rejected = 0
@@ -89,6 +91,8 @@ class Settings:
             force_fake=_truthy(e.get("MISTABRA_FORCE_FAKE")),
             cache_path=Path(e["MISTABRA_CACHE"]) if e.get("MISTABRA_CACHE") else None,
             standing=e.get("MISTABRA_STANDING", "judged"),
+            max_tokens=int(e.get("MISTABRA_MAX_TOKENS") or 4000),
+            reasoning=e.get("MISTABRA_REASONING") or None,
         )
         for k, v in overrides.items():
             setattr(s, k, v)
@@ -100,6 +104,8 @@ class Settings:
             self.model = {"anthropic": "claude-sonnet-4-5", "openai": "gpt-4o", "openrouter": "anthropic/claude-sonnet-4.5"}.get(self.provider, "fake-model")
         if not self.fast_model:
             self.fast_model = self.model
+        if self.reasoning not in (None, "none", "low", "medium", "high"):
+            raise ValueError(f"reasoning must be none | low | medium | high, not {self.reasoning!r}")
         if self.standing not in ("judged", "noisy_or"):
             raise ValueError(f"standing must be 'judged' or 'noisy_or', not {self.standing!r}")
 

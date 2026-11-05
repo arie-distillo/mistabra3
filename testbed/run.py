@@ -46,7 +46,7 @@ def run(settings_overrides: dict, only: list[str], log=print) -> dict:
     core = Core(settings)
     scenarios = [s for s in discover() if not only or any(o in s.id for o in only)]
     from mistabra_core.settings import describe_key
-    log(f"testbed provider={settings.provider} ({describe_key(settings.provider) if settings.uses_real_llm else 'offline'}) model={settings.model} fast={settings.fast_model} standing={settings.standing} "
+    log(f"testbed provider={settings.provider} ({describe_key(settings.provider) if settings.uses_real_llm else 'offline'}) model={settings.model} fast={settings.fast_model} reasoning={settings.reasoning or 'default'} standing={settings.standing} "
         f"scenarios={len(scenarios)} steps={sum(len(s.steps) * (max(1, len(s.operational.hypotheses)) if s.per_hypothesis else 1) for s in scenarios)}")
     results, t0 = [], time.time()
     for i, sc in enumerate(scenarios, 1):
