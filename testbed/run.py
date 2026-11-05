@@ -121,6 +121,7 @@ def main(argv=None) -> int:
                   f"force_fake={s.force_fake}.", file=sys.stderr)
             return 2
     over = {"cache_path": Path(a.cache)} if a.cache else {}
+    over["failure_log"] = Path(a.out) / "failures.jsonl"   # every failed model call, with prompt and raw output
     modes = ["judged", "noisy_or"] if a.compare else [a.standing or os.environ.get("MISTABRA_STANDING", "judged")]
     reports = [run({**over, "standing": m}, a.only) for m in modes]
     out = Path(a.out)
@@ -132,6 +133,8 @@ def main(argv=None) -> int:
     (out / f"{tag}.md").write_text(md, encoding="utf-8")
     print("\n" + md)
     print(f"report: {out / tag}.json, .md")
+    if (out / "failures.jsonl").exists():
+        print(f"failed model calls (prompt, raw output, error): {out / 'failures.jsonl'}")
     return 0
 
 

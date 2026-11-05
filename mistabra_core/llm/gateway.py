@@ -69,6 +69,15 @@ class Gateway:
     def model_for(self, tier: str) -> str:
         return self.settings.model if tier == "reasoning" else self.settings.fast_model
 
+    def _log_failure(self, task, model, user, text, err):
+        path = self.settings.failure_log
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "task": task, "model": model, "error": str(err),
+                                "output": text, "prompt": user}, ensure_ascii=False) + "\n")
+
     @staticmethod
     def version_of(task: str) -> str:
         return PROMPTS[task].version
@@ -92,8 +101,9 @@ class Gateway:
             if not cached:
                 self.cache.put(key, text)
         except (LLMOutputError, LLMTransportError) as e:
-            err = e
+            err = type(e)(f"{task}: {e}")
             self.stats["errors"] += 1
+            self._log_failure(task, model, user, text, err)
         if recorder is not None:
             recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=cached, ok=parsed is not None,
                                        latency_ms=int((time.perf_counter() - t0) * 1000), tokens_in=tokens[0], tokens_out=tokens[1]))
@@ -115,19 +125,28 @@ class Gateway:
     def _parse(text: str | None, schema: type[BaseModel]) -> BaseModel:
         if not text or not text.strip():
             raise LLMOutputError("empty output")
-        s = text.strip()
+        s = re.sub(r"<think>.*?(</think>|$)", "", text.strip(), flags=re.S).strip()   # reasoning echoed into content
         m = re.search(r"```(?:json)?\s*(.*?)```", s, re.S)
         if m:
             s = m.group(1).strip()
-        i = s.find("{")
-        if i < 0:
-            raise LLMOutputError("no JSON object in output")
-        s = s[i:s.rfind("}") + 1]
-        try:
-            data = json.loads(s)
-        except json.JSONDecodeError as e:
-            raise LLMOutputError(f"invalid JSON: {e}") from None
+        data = None
+        pairs = sorted((("{", "}"), ("[", "]")), key=lambda oc: s.find(oc[0]) if s.find(oc[0]) >= 0 else len(s))
+        for opener, closer in pairs:   # whichever structure starts first
+            i, j = s.find(opener), s.rfind(closer)
+            if i >= 0 and j > i:
+                try:
+                    data = json.loads(s[i:j + 1])
+                    break
+                except json.JSONDecodeError:
+                    continue
+        if data is None:
+            raise LLMOutputError(f"no JSON in output: {text.strip()[:300]!r}")
+        if isinstance(data, list):   # a bare list where the schema has exactly one list field: wrap it
+            lists = [n for n, f in schema.model_fields.items() if "list" in str(f.annotation)]
+            if len(lists) != 1:
+                raise LLMOutputError(f"got a JSON list, expected an object: {text.strip()[:300]!r}")
+            data = {lists[0]: data}
         try:
             return schema.model_validate(data)
         except ValidationError as e:
-            raise LLMOutputError(f"schema mismatch: {e.errors()[:2]}") from None
+            raise LLMOutputError(f"schema mismatch: {e.errors()[:2]} in {text.strip()[:300]!r}") from None

@@ -190,3 +190,18 @@ def test_schema_sent_as_response_format(monkeypatch):
     _gw(p).call("radar.derive", V)
     rf = sent["response_format"]
     assert rf["type"] == "json_schema" and "radars" in rf["json_schema"]["schema"]["properties"]
+
+
+@pytest.mark.parametrize("raw", ['<think>\nok\n</think>\n{"radars": [{"query": "q"}]}', '[{"query": "q"}]', 'Here:\n```json\n["q"]\n```'])
+def test_parser_tolerates_thinking_lists_and_fences(raw):
+    out = _gw(FakeProvider({"radar.derive": raw})).call("radar.derive", V)
+    assert [r.query for r in out.radars] == ["q"]
+
+
+def test_failures_logged_with_output(tmp_path):
+    log = tmp_path / "f.jsonl"
+    with pytest.raises(LLMOutputError, match="radar.derive: no JSON"):
+        _gw(FakeProvider({"radar.derive": "I cannot answer"}), failure_log=log).call("radar.derive", V)
+    import json
+    rec = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
+    assert rec["task"] == "radar.derive" and rec["output"] == "I cannot answer" and "TASK: radar.derive" in rec["prompt"]

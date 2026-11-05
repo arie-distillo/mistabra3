@@ -67,6 +67,7 @@ class Settings:
     cache_path: Path | None = None          # optional on-disk cache of model outputs (SQLite); in-memory otherwise
     max_tokens: int = 4000                  # per call; thinking models count their reasoning against it
     reasoning: str | None = None            # None = model default | none | low | medium | high (openai / openrouter)
+    failure_log: Path | None = None         # append failed model calls (prompt, raw output, error) as JSON lines
     structured: bool = True                 # send each prompt's JSON schema as response_format (openai / openrouter)
 
     standing: str = "judged"                # judged (reasoning model weighs the attached trajectories) | noisy_or (baseline)
@@ -94,6 +95,7 @@ class Settings:
             standing=e.get("MISTABRA_STANDING", "judged"),
             max_tokens=int(e.get("MISTABRA_MAX_TOKENS") or 4000),
             reasoning=e.get("MISTABRA_REASONING") or None,
+            failure_log=Path(e["MISTABRA_FAILURE_LOG"]) if e.get("MISTABRA_FAILURE_LOG") else None,
             structured=not (e.get("MISTABRA_STRUCTURED", "1").strip().lower() in ("0", "false", "no")),
         )
         for k, v in overrides.items():
