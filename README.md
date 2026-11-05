@@ -1,122 +1,100 @@
-# Mistabra PoC
+# Mistabra Core
 
-An analyst's co-pilot that turns intuition into reasoning — proof of concept, built from scratch
-against the API spec v3 (PoC subset). In-process Python library; all data in one directory.
+An analyst's co-pilot that turns intuition into reasoning — the reasoning layer, implementing the conceptual API
+in [`docs/mistabra_core_api_v3.md`](docs/mistabra_core_api_v3.md).
 
-## What it does
-
-Context (documents) → risks (a sentence each) → radars (queries derived from each risk) → episodes.
-Each episode arriving triggers, inline: every enabled radar reads it (relevance + structured extraction);
-a hit creates a **signal**; an episode no radar matched is checked against every risk (Lambda-signal check) and may
-become a **Lambda signal**; every signal gets a **risk trajectory** (one hypothesis, a rationale, reach, fit)
-and **baseline trajectories** (ordinary outcomes), written before any strength; strength is computed from
-reach, fit, gap, specificity and source credibility. The analyst rates blind, then sees the system's view,
-confirms or rejects trajectories (confirmed ones become precedent), and reads hypothesis coverage per risk.
-Everything is audited with a hash chain; any signal can be traced to its model calls; replay re-reasons
-signals and diffs against what was stored.
-
-## Install and run
-
-```bash
-pip install -e .            # pydantic, httpx
-pip install -e .[dev]       # + pytest
-
-python -m pytest                          # unit tier: offline, deterministic, ~1 s
-python -m tests.acceptance.run            # the PoC demonstration list, fake provider
-python -m tests.acceptance.run --live     # same against the configured real model
-mistabra bench                            # benchmark on testdata/, reported metrics
-```
-
-## LLM setup — one interface, any provider
-
-```bash
-export MISTABRA_PROVIDER=anthropic            # anthropic | openai | fake
-export MISTABRA_MODEL=claude-sonnet-4-5       # reasoning tier: radar derivation, trajectories
-export MISTABRA_FAST_MODEL=claude-haiku-4-5   # operational tier: radar reads, Lambda-signal check (defaults to MODEL)
-export MISTABRA_API_KEY=...                   # or ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY
-export MISTABRA_BASE_URL=...                  # openai: any OpenAI-compatible endpoint (OpenRouter, Ollama, vLLM, Groq)
-```
-
-Examples: OpenRouter → `provider=openai base_url=https://openrouter.ai/api/v1 model=anthropic/claude-sonnet-4.5`;
-Ollama → `provider=openai base_url=http://localhost:11434/v1 model=llama3.1` (no key needed).
-`MISTABRA_FORCE_FAKE=1` overrides everything (unit tests set it). Or in code:
+One call. It takes one episode with any part of its trajectory (signal, hypothesis, risk), completes what is
+missing, and assesses the result against baseline alternatives — on its own (`score`) and together with what is
+already attached to the same hypothesis (`standing`):
 
 ```python
-from mistabra import Mistabra, Settings
-m = Mistabra("./data", Settings(data_dir="./data", provider="openai", base_url="https://openrouter.ai/api/v1",
-                                api_key="...", model="anthropic/claude-sonnet-4.5", fast_model="anthropic/claude-haiku-4.5"))
+from mistabra_core import Core, Settings, TrajectoryInput, Episode
+
+core = Core(Settings.from_env())
+a = core.assess(mission, operational, TrajectoryInput(episode=Episode(id="e1", text="...", source="Field reports", credibility=0.8)))
+for g in a.groups:
+    t = g.target
+    print(t.risk.risk_id, t.hypothesis.source, t.hypothesis.claim, t.score, g.standing.value, t.lambda_signal, t.lambda_hypothesis)
 ```
 
-A provider is one class with one method (`complete(model, system, user, max_tokens) -> (text, usage)`);
-prompts, JSON parsing, caching, logging and retries live in the gateway. Malformed output is an error, not a retry.
-
-## The API (PoC subset)
-
-```python
-m.context.create(text, actor, title=…, kind=…) / create_file(path, actor) / search(query) / list(kind)
-m.risks.create(text, actor, open=False) / get / list / update(id, actor, open=…, status=…)
-m.radars.create(risk_id, query, actor) / derive(risk_id, actor) / list(risk_id) / update(id, actor, enabled=…)
-m.sources.create(name, actor, credibility=…)
-m.episodes.create(text, actor, source=…, occurred=…, metadata=…) / create_many / get / list      # drives everything
-m.signals.list(risk_id=…, status=…, via=…, episode_id=…) / get / update(id, actor, strength=…, status=…) / create(episode_id, risk_id, actor, note=…) / remove
-m.trajectories.list(signal_id=…) / get / update(id, actor, status="confirmed"|"rejected")
-m.hypotheses.list(risk_id=…) / get / signals(id) / coverage(risk_id)
-m.audit.events(…) / trace(signal_id) / verify()
-m.learn.replay(signal_ids, actor, model=…, prompt_version=…)
-m.stats()
-```
-
-Blind rule: `Signal.strength_system`, `metrics`, `trajectory` and `baselines` read as empty until the analyst sets
-`strength` on the signal (`Settings(blind=False)` turns it off; the mode is recorded on every audit event).
-
-Strength: `0.4·fit + 0.4·max(gap,0) + 0.2·reach`, scaled down by `(1+gap)` when an ordinary explanation fits better,
-then by specificity and source credibility. Deterministic, so `learn.replay` can isolate model/prompt changes.
+The layer reads the mission context (documents, risks; versioned) and the operational context (hypotheses with
+`baseline_of`, every trajectory kept, with status) and writes neither. Whatever it creates — signals, new
+hypotheses, new baselines — comes back in the result; the other layer decides what to keep.
 
 ## Layout
 
 ```
-mistabra/   settings.py  store.py (+schema.sql)  models.py  engine.py
-            llm/ base.py (interface + Anthropic + OpenAI-compatible)  fake.py  prompts.py  gateway.py
-            context.py  risks.py (risks, radars)  episodes.py (sources, episodes)  signals.py (signals, trajectories, hypotheses)
-            decision/ base.py (DecisionModel interface)  pairwise.py (PoC method)  setwise.py (frame under test)
-            api.py (Mistabra, audit, learn)  eval/benchmark.py  cli.py
-tests/      unit/ (38 tests, offline)   acceptance/run.py (16 checks, --live; MISTABRA_DECISION=setwise runs them on the other model)
-testdata/   context/*.md  risks.json  episodes.jsonl  benchmark/labels.json
+mistabra_core/          the layer
+  types.py              API types: MissionContext, OperationalContext, TrajectoryInput → Assessment
+  core.py               the reference implementation of assess()
+  scoring.py            score (documented formula) and standing strategies
+  settings.py           provider, models, standing strategy, thresholds
+  llm/                  uniform LLM interface: providers, gateway (cache, call records), prompts, fake provider
+testbed/                quality measurement
+  scenario.py           one scenario format + adapters for the PoC labelled set, ACH case files, phase-1 cases
+  harness.py            a stand-in for the other layer (keeps what assess returns) and the runner
+  metrics.py            A1–A6, R1, step expectations
+  run.py                CLI; writes testbed/reports/*.json and *.md
+  scenarios/            authored scenarios (flood conjunction + control, analyst hunches, noise drift, stability)
+  sources/              case files in their own formats (burnt bread ACH, phase-1 conj/miss cases)
+  data/community_safety the PoC's 31 labelled episodes
+  private/              (git-ignored) drop more case files here to include them locally
+tests/                  functional tests, offline (55)
+docs/                   the spec
 ```
 
-## The decision model (spike)
+## Setup
 
-Reasoning on a signal is abduction → decision → persistence. The abducer (the `trajectory.risk` and `trajectory.baseline`
-prompts) proposes one trajectory to a hypothesis — reusing an existing one or stating a new claim — and the ordinary
-explanations. The **decision model** then scores the risk's hypothesis set and returns a posterior over it, plus the
-signal's strength. `Settings.decision` (env `MISTABRA_DECISION`) selects it:
+```bash
+pip install -e ".[dev]"
+```
 
-- `pairwise` (default) — the PoC method: strength from the documented formula over fit, gap, reach, specificity and
-  credibility; the posterior is derived from the same fits. Stored strengths are unchanged by the refactor.
-- `setwise` — the frame under test: one reasoning-model call (`decision.setwise`) scores every hypothesis, every
-  baseline and *none of these* together, given what is already attached to each hypothesis (the state) and the previous
-  posterior. Strength = posterior mass on the risk hypotheses; `info_gain` = KL to the prior, in bits. Mass on *none*
-  at or above `none_threshold` means the set cannot explain the signal: the abducer is asked for a new claim
-  (`force_new`), it is created as a **Lambda hypothesis**, and the set is scored once more.
+LLM setup is uniform: provider, models, key and base URL from the environment (or `Settings(...)` in code).
 
-Terms: a **Lambda signal** is a signal on an episode no radar matched (`via="lambda"`); a **Lambda hypothesis** is one the
-system created because no existing hypothesis explained a signal (`is_lambda`), either because the abducer said so or
-because the set-wise posterior put the mass on *none*.
+```bash
+export MISTABRA_PROVIDER=anthropic            # anthropic | openai (any OpenAI-compatible endpoint) | fake
+export MISTABRA_MODEL=claude-sonnet-4-5       # reasoning tier: abduction, baselines, standing
+export MISTABRA_FAST_MODEL=claude-haiku-4-5   # operational tier: radar reads, Lambda-signal check
+export MISTABRA_API_KEY=...
+export MISTABRA_BASE_URL=...                  # openai provider: OpenRouter, Ollama, vLLM, ...
+```
 
-Every posterior is stored (`posterior` table, audited as `posterior.written`) and shown on the signal after the analyst
-rates (blind rule). `hypotheses.coverage` carries the latest belief per hypothesis. `learn.replay(ids, actor,
-decision="setwise")` re-scores stored signals with the other model, rebuilding the hypothesis set and state as they were
-when each signal arrived, so the two methods are compared on identical inputs. `mistabra bench --decision setwise`
-runs the benchmark the same way.
+## Tests and testbed
 
-## What the fake provider does and does not prove
+```bash
+pytest                                        # functional tests: fake provider, offline, < 1 s
+python -m testbed.run                         # every scenario end to end with the fake provider: proves the plumbing
+python -m testbed.run --live --compare --cache .cache/m.sqlite
+                                              # the measurements: judged vs noisy-OR standing on identical inputs
+python -m testbed.run --live --only miss_ --only flood
+```
 
-With `provider=fake` the suite proves the plumbing: consequences fire, the blind rule holds, trajectories precede
-strength, Lambda signals land on the right risk, precedent and replay work. Its benchmark numbers are heuristics, not method
-quality. `mistabra bench` with a real provider produces the numbers that matter (signal recall, false signals,
-band accuracy, ordering constraints, Lambda precision, missing-info flags); they are reported, not gated.
+The functional tests cover all eight input patterns, scope and detail, inconsistency notes, reuse of stored
+hypotheses and baselines, rejected hypotheses, Lambda signals and Lambda hypotheses, standing weights and
+`without`/`delta`, provenance, determinism and that inputs are never mutated.
 
-## Not in the PoC (MVP)
+The testbed measures (spec §8):
 
-Background execution, risk derivation from context, radar edits replaying over history, hypothesis creation and
-premises, entity resolution and corrections, per-radar/risk stats, precedent export, events, the MCP server.
+| Id | What | Scenarios |
+| --- | --- | --- |
+| A1 | score lands in labelled bands; positives above hard negatives; orderings hold | community_safety (31 labelled), authored |
+| A2 | the missing hypothesis is articulated and reaches standing; no false alarms in controls; Lambda flags | miss_01–04, miss_ctrl_*, analyst_hunches |
+| A3 | weak episodes combine into high standing; refuting sets lower a stated hypothesis | flood_conjunction/control, conj_01–06, conj_ctrl_* |
+| A4 | articulated claims match the stored hypothesis they repeat | flood_conjunction, analyst_hunches |
+| A5 | score spread across paraphrases of one episode | stability_elm |
+| A6 | ordinary episodes do not build a hypothesis from the layer's own proposals | noise_drift |
+| R1 | final standing orders the stated claims as the ACH ground truth does | burnt_bread_ach_classic (+ any private ACH file) |
+
+With the fake provider the numbers prove that every path runs; they are not measurements of the method. The
+fake cannot articulate a missing hypothesis or recognise a refutation, so A2 and A3 come out near zero offline —
+which is also a check that the metrics discriminate.
+
+`--compare` runs the same scenarios with `standing=judged` (the reasoning model weighs the attached trajectories
+together — the frame under test) and `standing=noisy_or` (a deterministic baseline that can only accumulate
+support). A3's refutation cases are where the two should differ most.
+
+## History
+
+The previous PoC (`mistabra/` package, SQLite store, facade APIs `risks`, `radars`, `signals`, …) is tagged
+`poc-0.2`. Reused from it, adapted: provider abstraction, gateway, prompts, fake provider, the score formula and
+the labelled community-safety data. Its storage and facade belong to the other layer and are not carried over.
