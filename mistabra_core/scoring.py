@@ -26,10 +26,14 @@ def weight_of(status: str, proposed_weight: float) -> float:
 
 
 def noisy_or(items: list[dict]) -> float:
-    p = 1.0
+    """Supporting trajectories accumulate; each weakening one removes up to half of what was accumulated."""
+    p, damp = 1.0, 1.0
     for t in items:
-        p *= 1.0 - max(0.0, min(1.0, t["weight"] * t["score"]))
-    return round(1.0 - p, 3)
+        if t.get("stance") == "weakens":
+            damp *= 1.0 - 0.5 * t["weight"]
+        else:
+            p *= 1.0 - max(0.0, min(1.0, t["weight"] * t["score"]))
+    return round((1.0 - p) * damp, 3)
 
 
 def uses(items: list[dict]) -> tuple[StandingUse, ...]:

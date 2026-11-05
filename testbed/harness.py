@@ -70,7 +70,7 @@ class OtherLayer:
             occ = step.episode.occurred if isinstance(step.episode.occurred, str) else None
             self.trs.append(StoredTrajectory(id=f"T{len(self.trs) + 1}-{t.episode_id}-{hid}", episode_id=t.episode_id, occurred=occ,
                                              hypothesis_id=hid, risk_id=risk_id, role="primary", signal=t.signal.content, score=t.score,
-                                             fit=t.fit, reach=t.reach, rationale=t.rationale or "", status="proposed"))
+                                             fit=t.fit, reach=t.reach, rationale=t.rationale or "", stance=t.stance, status="proposed"))
             for b in g.baselines:
                 bid = self._hyp_id(b.hypothesis, risk_id, "baseline", baseline_of=hid)
                 self.trs.append(StoredTrajectory(id=f"T{len(self.trs) + 1}-{t.episode_id}-{bid}", episode_id=t.episode_id, occurred=occ,
@@ -117,6 +117,7 @@ class GroupRec:
     baselines: int
     inconsistency: str | None
     missing: list[str] = field(default_factory=list)
+    stance: str = "supports"
 
 
 @dataclass
@@ -165,7 +166,7 @@ def run_scenario(core: Core, sc: Scenario, log=print) -> ScenarioResult:
                                        score=t.score, fit=t.fit, reach=t.reach, lambda_signal=t.lambda_signal, lambda_hypothesis=t.lambda_hypothesis,
                                        match_confidence=t.hypothesis.match_confidence, standing=g.standing.value, without=g.standing.without,
                                        delta=g.standing.delta, baselines=len(g.baselines), inconsistency=g.inconsistency,
-                                       missing=list(t.missing)))
+                                       missing=list(t.missing), stance=t.stance))
                 last_standing[hid] = g.standing.value
             calls = a.provenance.calls
             res.steps.append(StepRec(label=st.label, episode_id=st.episode.id, pattern=a.pattern,

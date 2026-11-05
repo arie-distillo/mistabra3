@@ -152,3 +152,34 @@ def test_radars_follow_the_stored_hypotheses(core, mission, op):
     more = op.model_copy(update={"hypotheses": op.hypotheses[:1]})
     core.assess(mission, more, TrajectoryInput(episode=ep(HOUSE)))
     assert len(core._radars) > n                               # stored hypotheses changed: radars re-derived
+
+
+# ---------------------------------------------------------------- counter-evidence (stance)
+WEAKENS = {"trajectory.abduce": {"relevant": True, "signal": None, "trajectories": [],
+                                 "stored": [{"hypothesis_id": "H_elm", "stance": "weakens", "fit": 0.1, "rationale": "the visitor was the new tenant"},
+                                            {"hypothesis_id": "H_centre", "stance": "unrelated"}]}}
+
+
+def test_counter_evidence_attaches_as_weakens(mission, op):
+    a = make_core(WEAKENS).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack"))
+    assert len(a.groups) == 1
+    t = a.groups[0].target
+    assert t.hypothesis.id == "H_elm" and t.hypothesis.source == "predefined" and t.stance == "weakens" and t.score == 0.0
+    assert "tenant" in t.rationale
+
+
+@pytest.mark.parametrize("strategy", ["judged", "noisy_or"])
+def test_counter_evidence_lowers_standing(mission, op, strategy):
+    ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"), traj("c2", "H_elm", 0.5, "confirmed"))})
+    s = make_core(WEAKENS, standing=strategy).assess(mission, ctx, TrajectoryInput(episode=ep(HOUSE, eid="new"), risk="attack")).groups[0].standing
+    if strategy == "noisy_or":
+        assert s.value < s.without and s.delta < 0
+    assert [u.status for u in s.used][-1] == "this"
+
+
+def test_supporting_trajectories_listed_before_counter_evidence(mission, op):
+    over = {"trajectory.abduce": {"relevant": True, "signal": None,
+                                  "trajectories": [{"hypothesis_id": "H_centre", "match_confidence": 0.9, "fit": 0.6, "reach": 0.3}],
+                                  "stored": [{"hypothesis_id": "H_elm", "stance": "weakens", "fit": 0.1}]}}
+    a = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOODED), risk="attack"))
+    assert [(g.target.hypothesis.id, g.target.stance) for g in a.groups] == [("H_centre", "supports"), ("H_elm", "weakens")]

@@ -265,6 +265,11 @@ def e_expectations(results: list[ScenarioResult]) -> dict:
                 ok.append(good)
                 if not good:
                     fails.append(f"{res.id}:{s.label} inconsistency {g.inconsistency if g else None}")
+            if "stance" in e:
+                good = g is not None and g.stance == e["stance"]
+                ok.append(good)
+                if not good:
+                    fails.append(f"{res.id}:{s.label} stance {g.stance if g else 'no group'}, expected {e['stance']}")
             if "not_articulated_like" in e:
                 claim = res.hypotheses.get(e["not_articulated_like"], {}).get("claim", "")
                 dup = [x.claim for x in s.groups if x.source == "articulated" and jaccard(x.claim, claim) >= 0.5]

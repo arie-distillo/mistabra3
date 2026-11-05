@@ -100,6 +100,7 @@ class StoredTrajectory(Frozen):
     reach: float = 0.0
     rationale: str = ""
     ordinary_outcome: str | None = None
+    stance: Literal["supports", "weakens"] = "supports"
     status: TrajectoryStatus = "proposed"
 
 
@@ -195,6 +196,7 @@ class AssessedTrajectory(Frozen):
     missing: tuple[str, ...] = ()
     rationale: str | None = None
     ordinary_outcome: str | None = None
+    stance: Literal["supports", "weakens"] = "supports"   # weakens: counter-evidence against the hypothesis
 
     @property
     def lambda_signal(self) -> bool:

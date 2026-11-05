@@ -35,6 +35,6 @@ steps:
       credibility: 0.9
       occurred: "2026-10-21T09:00:00Z"
     risk: flood
-    expect: {matches: "step:rain"}      # counter-evidence must attach to the drainage hypothesis, not be dropped
+    expect: {matches: "step:rain", stance: weakens}   # counter-evidence attaches to the drainage hypothesis, marked weakens
 final:
   jointly_strong: {hypothesis: "step:rain", min_standing: 0.4, max_single: 0.5}

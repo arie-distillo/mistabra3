@@ -141,6 +141,7 @@ AssessedTrajectory:
   missing:    [str]                 # information that would change the assessment
   rationale:  str                   # omitted when detail="scores"
   ordinary_outcome: str | None      # baselines only
+  stance:     supports | weakens     # weakens: counter-evidence against the hypothesis (v3.1)
   lambda_signal:     bool           # signal.source == articulated
   lambda_hypothesis: bool           # hypothesis.source == articulated
 
@@ -197,6 +198,14 @@ Because a hypothesis is always scored against its stored baselines, its scores a
 - Standing is returned for every group, including a Lambda hypothesis (then `without` is 0 unless earlier trajectories match it).
 
 Two safeguards against the system talking itself into a hypothesis: `score` never uses other trajectories, and `proposed` trajectories — the layer's own unconfirmed outputs — carry reduced weight in standing.
+
+### 5.2a Counter-evidence (v3.1)
+
+An episode can make a stored hypothesis less likely — "the drains were cleared last week" against "uncleared drains will flood the
+lower districts". For every stored hypothesis of the risk the layer states a stance: supports, weakens or unrelated. A weakening
+episode is returned as a trajectory to that hypothesis with `stance: weakens` and `score` 0; it is kept like any other trajectory,
+and standing weighs it as evidence against the hypothesis. Without this, counter-evidence would be judged irrelevant and dropped,
+and a hypothesis could only ever gain standing.
 
 ### 5.3 Reuse of stored hypotheses and baselines
 

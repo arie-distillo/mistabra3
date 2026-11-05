@@ -213,13 +213,24 @@ class FakeProvider:
                 trs.append({"hypothesis_id": h["id"], "claim": None, "match_confidence": round(min(0.95, 0.45 + 0.1 * ov), 2),
                             "reach": reach, "fit": fit_of(sig_text, h["claim"]),
                             "rationale": f"The episode bears on the stored hypothesis '{h['claim']}'.", "entities": entities(ep), "missing": []})
+        negating = any(w in ep.lower() for w in ("cleared", "completed", "upgraded", "restored", "within normal", "ruled out"))
+        stored_out = []
+        for h in d.get("stored_hypotheses", []):
+            ov = overlap(sig_text, h["claim"])
+            stance = "unrelated" if ov < 2 else ("weakens" if negating else "supports")
+            stored_out.append({"hypothesis_id": h["id"], "stance": stance, "fit": 0.1 if stance == "weakens" else fit_of(sig_text, h["claim"]),
+                               "rationale": f"fake: {stance}"})
+        if negating:
+            trs = [t for t in trs if t["hypothesis_id"] is None]
         relevant = bool(trs) or overlap(sig_text, d["risk_text"]) >= 1 or bool(sig) or bool(mods(ep))
         if not trs and relevant:
             claim = claim_for(sig_text, d["risk_text"])
             trs.append({"hypothesis_id": None, "claim": claim, "match_confidence": 0.0, "reach": reach, "fit": fit_of(sig_text, claim),
                         "rationale": f"If {claim}, the episode is a step toward: {d['risk_text']}", "entities": entities(ep),
                         "missing": ["occurrence time"] if not d["episode"].get("occurred") else []})
-        return {"relevant": relevant, "signal": out_signal if relevant else None, "trajectories": trs}
+        if negating and any(x["stance"] == "weakens" for x in stored_out):
+            trs = []
+        return {"relevant": relevant, "signal": out_signal if relevant else None, "trajectories": trs, "stored": stored_out}
 
     def _trajectory_baselines(self, d):
         ep = d["episode"]["text"]

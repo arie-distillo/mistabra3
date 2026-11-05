@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -97,12 +99,21 @@ class TrajectoryDraft(Out):
     fit: float = 0.0
     entities: list[str] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)
+    stance: Literal["supports", "weakens"] = "supports"
+
+
+class StoredStance(Out):
+    hypothesis_id: str
+    stance: Literal["supports", "weakens", "unrelated"] = "unrelated"
+    fit: float = 0.0
+    rationale: str = ""
 
 
 class AbduceOut(Out):
     relevant: bool = True
     signal: ContentOut | None = None
     trajectories: list[TrajectoryDraft] = Field(default_factory=list)
+    stored: list[StoredStance] = Field(default_factory=list)   # one entry per stored hypothesis
 
 
 class BaselineAssessed(Out):
@@ -167,7 +178,7 @@ PROMPTS: dict[str, Prompt] = {
         "toward the risk — something a thoughtful analyst would want to look at even though no query anticipated it. Be conservative: most "
         "episodes are not relevant to most risks. If relevant, extract the signal content and say why in one sentence. " + CONTENT + " "
         "Schema: {\"relevant\":bool,\"confidence\":0-1,\"why\":str,\"content\":{...}|null}", LambdaCheckOut, "fast"),
-    "trajectory.abduce": Prompt("trajectory.abduce", "2", ANALYST,
+    "trajectory.abduce": Prompt("trajectory.abduce", "3", ANALYST,
         "Complete and assess the trajectory episode -> signal -> hypothesis -> risk.\n"
         "- signal: if INPUT signal is null, articulate what in the episode connects it to the risk (or to the given hypothesis) as signal "
         "content; if a signal is given (content or analyst note), keep it as is and return signal null. " + CONTENT + "\n"
@@ -179,15 +190,18 @@ PROMPTS: dict[str, Prompt] = {
         "expresses; if the episode supports a rejected one, reference its id.\n"
         "- Every hypothesis is a claim under which the risk becomes MORE likely. Ordinary explanations (things are normal, routine, "
         "benign, under control) are NOT hypotheses here: they are baselines, assessed separately; never return them as trajectories.\n"
-        "- An episode that weakens or rules out a stored hypothesis IS relevant: return a trajectory to that hypothesis with a low fit "
-        "and say in the rationale what it rules out.\n"
+        "- stored: one entry for EVERY stored hypothesis, with its stance toward this episode: \"supports\" (the episode makes it more "
+        "likely; also return it in trajectories), \"weakens\" (the episode makes it less likely or removes its mechanism: "
+        "counter-evidence), or \"unrelated\"; fit 0-1 (low for weakens); rationale one sentence.\n"
+        "- If given_hypothesis is set and the episode makes it less likely, return its trajectory with stance \"weakens\".\n"
         "- relevant: false (and no trajectories) only if the episode neither supports nor weakens any way to the risk.\n"
         "- rationale: 2-4 sentences telling the story from the episode via the hypothesis to the risk. reach: how far along the path to "
         "the risk the episode sits (0 = remote precursor, 1 = the risk itself). fit: how well the episode supports the hypothesis on its "
         "own (raise for concealment, repetition, odd hours, tooling, explicit intent, named target; lower for a named benign role or "
         "stated purpose). missing: information that would change the assessment. Use precedents (confirmed past trajectories) for consistency.\n"
         "Schema: {\"relevant\":bool,\"signal\":{...}|null,\"trajectories\":[{\"hypothesis_id\":str|null,\"claim\":str|null,"
-        "\"match_confidence\":0-1,\"rationale\":str,\"reach\":0-1,\"fit\":0-1,\"entities\":[str],\"missing\":[str]}]}", AbduceOut, "reasoning"),
+        "\"match_confidence\":0-1,\"rationale\":str,\"reach\":0-1,\"fit\":0-1,\"entities\":[str],\"missing\":[str],\"stance\":\"supports\"|\"weakens\"}],"
+        "\"stored\":[{\"hypothesis_id\":str,\"stance\":\"supports\"|\"weakens\"|\"unrelated\",\"fit\":0-1,\"rationale\":str}]}", AbduceOut, "reasoning"),
     "trajectory.baselines": Prompt("trajectory.baselines", "1", ANALYST,
         "Weigh the ordinary explanations of the same episode against the hypothesis. First assess every stored baseline: for each, the "
         "ordinary outcome it ends in, a one-to-two sentence rationale, and fit — how well the episode supports THIS ordinary explanation "
@@ -196,12 +210,13 @@ PROMPTS: dict[str, Prompt] = {
         "ones covers (none if they cover it). "
         "Schema: {\"assessed\":[{\"baseline_id\":str,\"fit\":0-1,\"ordinary_outcome\":str,\"rationale\":str}],"
         "\"new\":[{\"claim\":str,\"ordinary_outcome\":str,\"rationale\":str,\"fit\":0-1}]}", BaselinesOut, "reasoning"),
-    "standing.judge": Prompt("standing.judge", "2", ANALYST,
+    "standing.judge": Prompt("standing.judge", "3", ANALYST,
         "Judge how well the hypothesis is supported, against its ordinary explanations (baselines), by ALL the trajectories attached to "
         "it, taken together. Each trajectory has a status and a weight: confirmed by the analyst (weight 1), proposed by the system and "
         "not yet confirmed (lower weight; treat as less certain), rejected by the analyst (weight 0: ignore it as support). Combine them as "
         "an analyst would: several individually weak trajectories that point the same way can make the hypothesis likely; two that report "
-        "the same fact count once; a trajectory whose best explanation is ordinary adds little; evidence that rules out the hypothesis's "
+        "the same fact count once; a trajectory whose best explanation is ordinary adds little; a trajectory with stance \"weakens\" is "
+        "counter-evidence and lowers the hypothesis in proportion to its weight; evidence that rules out the hypothesis's "
         "mechanism lowers it even if each item alone looks neutral. Use the whole scale: 0 = refuted; 0.05-0.2 = a single weak or unconfirmed indication; 0.2-0.4 = some support, ordinary "
         "explanations still as likely; 0.4-0.6 = several indications pointing the same way, ordinary explanations strained; 0.6-0.8 = "
         "strong, specific support from independent sources; 0.8-1 = confirmed by the analyst or near-certain. Proposed (unconfirmed) "

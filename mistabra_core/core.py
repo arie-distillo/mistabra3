@@ -176,7 +176,8 @@ class Core:
             "max": 1 if given_claim else self.settings.max_trajectories,
         }
         ab = self.gw.call("trajectory.abduce", variables, recorder=run.rec)
-        if given_claim is None and (not ab.relevant or not ab.trajectories):
+        weakened = [x for x in ab.stored if x.stance == "weakens" and op.hypothesis(x.hypothesis_id) is not None]
+        if given_claim is None and not ab.trajectories and not weakened:
             return []
         if signal is None:   # pointed at by the analyst, no radar matched: the layer articulates the signal
             signal = SignalOut(content=SignalContent(**self._content(ab.signal)) if ab.signal else SignalContent(summary=ep.text[:140]),
@@ -185,6 +186,10 @@ class Core:
             signal = SignalOut(content=SignalContent(**self._content(ab.signal)), source="articulated")
 
         drafts = ab.trajectories[:1] if given_claim else ab.trajectories[: self.settings.max_trajectories]
+        if given_claim is None:   # counter-evidence against stored hypotheses becomes trajectories marked "weakens"
+            have = {d.hypothesis_id for d in drafts}
+            drafts += [TrajectoryDraft(hypothesis_id=x.hypothesis_id, match_confidence=1.0, fit=min(x.fit, 0.3), reach=0.0,
+                                       rationale=x.rationale, stance="weakens") for x in weakened if x.hypothesis_id not in have]
         if given_claim and not drafts:
             drafts = [TrajectoryDraft(hypothesis_id="given", rationale="The model returned no trajectory for the given hypothesis.")]
 
@@ -256,8 +261,10 @@ class Core:
         best_b = max((b.fit for b in baselines), default=0.0)
         fit, reach = round(d.fit, 3), round(d.reach, 3)
         score = score_from(reach, fit, fit - best_b, signal.content.specificity, ep.credibility)
+        if d.stance == "weakens":
+            score = 0.0           # counter-evidence carries no support; standing weighs it as evidence against
         target = AssessedTrajectory(episode_id=ep.id, role="primary", signal=signal, hypothesis=href, risk=rref, score=score,
-                                    reach=reach, fit=fit, missing=tuple(d.missing), rationale=d.rationale)
+                                    reach=reach, fit=fit, missing=tuple(d.missing), rationale=d.rationale, stance=d.stance)
         return AssessmentGroup(target=target, baselines=tuple(baselines), standing=self._standing(op, ti, risk, target, baselines, run))
 
     # ---------------------------------------------------------------- standing
@@ -266,10 +273,10 @@ class Core:
         attached = op.attached(target.hypothesis.id)[-self.settings.max_attached:] if target.hypothesis.id else []
         attached = [t for t in attached if t.episode_id != ti.episode.id]   # re-assessing an episode replaces its own trajectory
         run.saw(*attached)
-        items = [{"id": t.id, "status": t.status, "weight": weight_of(t.status, pw), "score": t.score, "fit": t.fit, "reach": t.reach,
+        items = [{"id": t.id, "status": t.status, "stance": t.stance, "weight": weight_of(t.status, pw), "score": t.score, "fit": t.fit, "reach": t.reach,
                   "occurred": t.occurred, "summary": t.signal.summary, "rationale": t.rationale} for t in attached]
         analysts_own = ti.signal is not None and ti.hypothesis is not None
-        this = {"id": f"this:{ti.episode.id}", "status": "this", "weight": 1.0 if analysts_own else pw, "score": target.score,
+        this = {"id": f"this:{ti.episode.id}", "status": "this", "stance": target.stance, "weight": 1.0 if analysts_own else pw, "score": target.score,
                 "fit": target.fit, "reach": target.reach, "occurred": ti.episode.occurred if isinstance(ti.episode.occurred, str) else None,
                 "summary": target.signal.content.summary, "rationale": target.rationale}
         without = self._judge(risk, target, baselines, items, run) if any(i["weight"] > 0 for i in items) else (0.0, None)
@@ -283,7 +290,7 @@ class Core:
         out = self.gw.call("standing.judge", {
             "risk_text": risk.text, "hypothesis": target.hypothesis.claim,
             "baselines": sorted({b.hypothesis.claim for b in baselines}),
-            "trajectories": [{k: i[k] for k in ("status", "weight", "score", "fit", "reach", "occurred", "summary", "rationale")} for i in items]},
+            "trajectories": [{k: i[k] for k in ("status", "stance", "weight", "score", "fit", "reach", "occurred", "summary", "rationale")} for i in items]},
             recorder=run.rec)
         return round(max(0.0, min(1.0, out.value)), 3), out.rationale
 
