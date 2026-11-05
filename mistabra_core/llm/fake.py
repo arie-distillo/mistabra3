@@ -1,4 +1,4 @@
-"""Deterministic fake provider: structurally valid, plausibly ordered outputs from cheap lexical heuristics.
+"""Deterministic fake model: structurally valid, plausibly ordered outputs from cheap lexical heuristics.
 
 It proves plumbing, not quality: every prompt is answered, the same input always gives the same output, and the
 answers move in the right direction (concealment raises fit, a stated benign role lowers it, overlapping words
@@ -146,20 +146,32 @@ def claim_for(text: str, risk: str) -> str:
 
 
 class FakeProvider:
+    """A PydanticAI FunctionModel: answers each prompt through the output tool, like a real model would, so the
+    gateway's whole path (output tool, validation, retries, cache, records) runs offline."""
     name = "fake"
 
     def __init__(self, overrides: dict | None = None):
         self.overrides, self.calls = overrides or {}, []
 
-    def complete(self, model, system, user, max_tokens, schema=None):
+    def model(self, tier: str):
+        from pydantic_ai.models.function import FunctionModel
+        return FunctionModel(self._respond, model_name="fake-model")
+
+    def model_settings(self) -> dict:
+        return {}
+
+    def _respond(self, messages, info):
+        from pydantic_ai.messages import ModelResponse, ToolCallPart, UserPromptPart
+        user = next(part.content for m in messages for part in getattr(m, "parts", []) if isinstance(part, UserPromptPart))
         task, d = _task(user), _input(user)
         self.calls.append(task)
         if task in self.overrides:
             o = self.overrides[task]
             out = o(d) if callable(o) else o
-            return (out if isinstance(out, str) else json.dumps(out)), (None, None)
-        out = getattr(self, "_" + task.replace(".", "_"))(d)
-        return json.dumps(out), (len(user) // 4, 150)
+        else:
+            out = getattr(self, "_" + task.replace(".", "_"))(d)
+        args = out if isinstance(out, str) else json.dumps(out)
+        return ModelResponse(parts=[ToolCallPart(tool_name=info.output_tools[0].name, args=args)])
 
     # ---- radars
     def _radar_derive(self, d):

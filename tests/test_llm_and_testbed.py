@@ -1,8 +1,9 @@
-"""Gateway contract, settings, and the testbed's own plumbing (scenario loading, other-layer stub, metrics)."""
+"""Gateway contract (PydanticAI output tools, validation retries, error mapping, cache, records, failure log),
+settings, and the testbed's own plumbing (scenario loading, other-layer stub, metrics)."""
 import pytest
 
 from mistabra_core import Settings
-from mistabra_core.llm import FakeProvider, Gateway, LLMOutputError, LLMTransportError, Recorder
+from mistabra_core.llm import OUTPUT_RETRIES, FakeProvider, Gateway, LLMAuthError, LLMOutputError, LLMTransportError, Recorder
 
 V = {"risk_text": "r", "context": [], "hypotheses": []}
 
@@ -16,8 +17,8 @@ def test_cache_and_record():
     gw, rec = _gw(p), Recorder()
     gw.call("radar.derive", V, recorder=rec)
     gw.call("radar.derive", V, recorder=rec)
-    assert gw.stats == {"calls": 1, "cached": 1, "errors": 0} and p.calls == ["radar.derive"]
-    assert [c.cached for c in rec.calls] == [False, True] and rec.calls[0].prompt_version == "1"
+    assert gw.stats == {"calls": 1, "cached": 1, "errors": 0, "retries": 0} and p.calls == ["radar.derive"]
+    assert [c.cached for c in rec.calls] == [False, True] and rec.calls[0].prompt_version == "1" and rec.calls[0].retries == 0
 
 
 def test_disk_cache_survives_a_new_gateway(tmp_path):
@@ -28,30 +29,69 @@ def test_disk_cache_survives_a_new_gateway(tmp_path):
     assert p.calls == []
 
 
-@pytest.mark.parametrize("bad", ["", "no json here", "{\"radars\": \"wrong\"}", "```json\n{\"radars\": [\n"])
-def test_malformed_output_not_retried(bad):
-    p = FakeProvider({"radar.derive": bad})
-    rec = Recorder()
-    with pytest.raises(LLMOutputError):
-        _gw(p).call("radar.derive", V, recorder=rec)
-    assert len(p.calls) == 1 and rec.calls[0].ok is False
+def test_validation_error_is_sent_back_and_fixed():
+    answers = iter(['{"radars": "wrong"}', '{"radars": [{"query": "q"}]}'])
+    p, rec = FakeProvider({"radar.derive": lambda d: next(answers)}), Recorder()
+    gw = _gw(p)
+    out = gw.call("radar.derive", V, recorder=rec)
+    assert [r.query for r in out.radars] == ["q"] and p.calls == ["radar.derive"] * 2
+    assert rec.calls[0].retries == 1 and gw.stats["retries"] == 1
 
 
-def test_transport_error_retried(monkeypatch):
-    class Down:
-        name = "down"
+@pytest.mark.parametrize("bad", ['{"radars": [42]}', "no json here", '{"radars": "wrong"}', '{"radars": ['])
+def test_persistently_malformed_output_fails_after_retries(bad, tmp_path):
+    import json
+    log = tmp_path / "f.jsonl"
+    p, rec = FakeProvider({"radar.derive": bad}), Recorder()
+    with pytest.raises(LLMOutputError, match="radar.derive"):
+        _gw(p, failure_log=log).call("radar.derive", V, recorder=rec)
+    assert len(p.calls) == 1 + OUTPUT_RETRIES and rec.calls[0].ok is False
+    entry = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
+    assert entry["task"] == "radar.derive" and "TASK: radar.derive" in entry["prompt"] and len(entry["messages"]) >= 2
 
-        def __init__(self):
-            self.n = 0
 
-        def complete(self, *a):
-            self.n += 1
-            raise LLMTransportError("net")
+def test_bare_string_radars_accepted():
+    out = _gw(FakeProvider({"radar.derive": '{"radars": ["Does the episode report a blocked culvert?", {"query": "q2"}]}'})).call("radar.derive", V)
+    assert [r.query for r in out.radars] == ["Does the episode report a blocked culvert?", "q2"]
+
+
+def _raising(exc):
+    n = {"calls": 0}
+
+    def boom(d):
+        n["calls"] += 1
+        raise exc
+    return FakeProvider({"radar.derive": boom}), n
+
+
+def test_auth_error_not_retried():
+    from pydantic_ai.exceptions import ModelHTTPError
+    p, n = _raising(ModelHTTPError(401, "m", {"error": {"message": "User not found."}}))
+    with pytest.raises(LLMAuthError, match="401"):
+        _gw(p).call("radar.derive", V)
+    assert n["calls"] == 1
+
+
+def test_server_error_retried(monkeypatch):
+    from pydantic_ai.exceptions import ModelHTTPError
     monkeypatch.setattr("mistabra_core.llm.gateway.time.sleep", lambda s: None)
-    p = Down()
+    p, n = _raising(ModelHTTPError(503, "m", "busy"))
     with pytest.raises(LLMTransportError):
         _gw(p).call("radar.derive", V)
-    assert p.n == 3
+    assert n["calls"] == 3
+
+
+@pytest.mark.parametrize("provider,cls", [("openrouter", "OpenAIChatModel"), ("openai", "OpenAIChatModel"), ("anthropic", "AnthropicModel")])
+def test_backend_builds_pydantic_ai_models(provider, cls):
+    from mistabra_core.llm import Backend
+    b = Backend(Settings(provider=provider, api_key="k", base_url="http://localhost:11434/v1" if provider == "openai" else None,
+                         reasoning="none"))
+    m = b.model("reasoning")
+    assert type(m).__name__ == cls and b.model("reasoning") is m
+    ms = b.model_settings()
+    assert ms["temperature"] == 0 and ms["max_tokens"] == 4000
+    if provider == "openrouter":
+        assert ms["extra_body"] == {"reasoning": {"enabled": False}} and "openrouter.ai" in str(m.client.base_url)
 
 
 def test_settings_force_fake_and_validation(monkeypatch):
@@ -63,7 +103,6 @@ def test_settings_force_fake_and_validation(monkeypatch):
         Settings(standing="vote")
 
 
-# ---------------------------------------------------------------- testbed plumbing
 def test_scenarios_load():
     from testbed.scenario import discover
     sc = {s.id: s for s in discover(include_private=False)}
@@ -129,14 +168,6 @@ def test_dotenv_loaded_from_parent_without_overriding(tmp_path, monkeypatch):
         monkeypatch.delenv(k)
 
 
-def test_openrouter_provider_has_its_url():
-    from mistabra_core.llm.base import OpenAICompatibleProvider, make_provider
-    s = Settings(provider="openrouter", api_key="k")
-    p = make_provider(s)
-    assert isinstance(p, OpenAICompatibleProvider) and str(p.client.base_url).startswith("https://openrouter.ai/api/v1")
-    assert s.model == "anthropic/claude-sonnet-4.5"
-
-
 def test_key_belongs_to_the_provider(monkeypatch):
     from mistabra_core.settings import _key_for
     env = {"OPENAI_API_KEY": "sk-openai", "ANTHROPIC_API_KEY": "sk-ant", "OPENROUTER_API_KEY": "sk-or"}
@@ -144,64 +175,3 @@ def test_key_belongs_to_the_provider(monkeypatch):
     assert _key_for("anthropic", env) == ("ANTHROPIC_API_KEY", "sk-ant")
     assert _key_for("openrouter", {"OPENAI_API_KEY": "sk-openai"}) == (None, None)       # never another service's key
     assert _key_for("openai", {**env, "MISTABRA_API_KEY": "explicit"}) == ("MISTABRA_API_KEY", "explicit")
-
-
-def test_auth_error_not_retried(monkeypatch):
-    import httpx
-    from mistabra_core.llm.base import LLMAuthError, OpenAICompatibleProvider
-    p = OpenAICompatibleProvider("bad", "https://example.invalid/v1")
-    monkeypatch.setattr(p.client, "post", lambda *a, **k: httpx.Response(401, text='{"error":{"message":"User not found."}}'))
-    with pytest.raises(LLMAuthError):
-        _gw(p).call("radar.derive", V)
-
-
-def test_empty_output_explains_thinking_budget(monkeypatch):
-    import httpx
-    from mistabra_core.llm.base import OpenAICompatibleProvider
-    p = OpenAICompatibleProvider("k", "https://openrouter.ai/api/v1", reasoning="none")
-    sent = {}
-
-    def post(path, json):
-        sent.update(json)
-        return httpx.Response(200, json={"choices": [{"finish_reason": "length", "message": {"content": "", "reasoning": "hmm..."}}],
-                                         "usage": {"completion_tokens": 4000}})
-    monkeypatch.setattr(p.client, "post", post)
-    with pytest.raises(LLMOutputError, match="MISTABRA_REASONING"):
-        _gw(p).call("radar.derive", V)
-    assert sent["reasoning"] == {"enabled": False} and sent["max_tokens"] == 4000
-
-
-def test_bare_string_radars_accepted():
-    gw = _gw(FakeProvider({"radar.derive": '{"radars": ["Does the episode report a blocked culvert?", {"query": "q2"}]}'}))
-    out = gw.call("radar.derive", V)
-    assert [r.query for r in out.radars] == ["Does the episode report a blocked culvert?", "q2"]
-
-
-def test_schema_sent_as_response_format(monkeypatch):
-    import httpx
-    from mistabra_core.llm.base import OpenAICompatibleProvider
-    p = OpenAICompatibleProvider("k", "https://openrouter.ai/api/v1")
-    sent = {}
-
-    def post(path, json):
-        sent.update(json)
-        return httpx.Response(200, json={"choices": [{"message": {"content": '{"radars": [{"query": "q"}]}'}}], "usage": {}})
-    monkeypatch.setattr(p.client, "post", post)
-    _gw(p).call("radar.derive", V)
-    rf = sent["response_format"]
-    assert rf["type"] == "json_schema" and "radars" in rf["json_schema"]["schema"]["properties"]
-
-
-@pytest.mark.parametrize("raw", ['<think>\nok\n</think>\n{"radars": [{"query": "q"}]}', '[{"query": "q"}]', 'Here:\n```json\n["q"]\n```'])
-def test_parser_tolerates_thinking_lists_and_fences(raw):
-    out = _gw(FakeProvider({"radar.derive": raw})).call("radar.derive", V)
-    assert [r.query for r in out.radars] == ["q"]
-
-
-def test_failures_logged_with_output(tmp_path):
-    log = tmp_path / "f.jsonl"
-    with pytest.raises(LLMOutputError, match="radar.derive: no JSON"):
-        _gw(FakeProvider({"radar.derive": "I cannot answer"}), failure_log=log).call("radar.derive", V)
-    import json
-    rec = json.loads(log.read_text(encoding="utf-8").splitlines()[0])
-    assert rec["task"] == "radar.derive" and rec["output"] == "I cannot answer" and "TASK: radar.derive" in rec["prompt"]

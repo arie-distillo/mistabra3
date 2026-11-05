@@ -235,6 +235,7 @@ class LLMCallRecord(Frozen):
     latency_ms: int
     tokens_in: int | None = None
     tokens_out: int | None = None
+    retries: int = 0                           # validation failures sent back to the model before it answered
 
 
 class Provenance(Frozen):

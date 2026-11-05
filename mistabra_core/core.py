@@ -17,7 +17,7 @@ import json
 import re
 import threading
 
-from .llm import Gateway, LLMAuthError, LLMError, Recorder, make_provider
+from .llm import Gateway, LLMAuthError, LLMError, Recorder, make_backend
 from .llm.prompts import TrajectoryDraft
 from .scoring import noisy_or, score_from, uses, weight_of
 from .settings import Settings
@@ -48,7 +48,7 @@ class _Run:
 class Core:
     def __init__(self, settings: Settings | None = None, *, provider=None):
         self.settings = settings or Settings.from_env()
-        self.provider = provider or make_provider(self.settings)
+        self.provider = provider or make_backend(self.settings)
         self.gw = Gateway(self.settings, self.provider)
         self._radars: dict[tuple, list[str]] = {}
         self._lock = threading.Lock()

@@ -53,7 +53,7 @@ def _truthy(v: str | None) -> bool:
 class Settings:
     """Everything configurable about the reference implementation, in one place.
 
-    LLM setup is uniform across providers: `provider` picks the adapter, `model` (reasoning tier) and
+    LLM setup is uniform across providers (all calls go through PydanticAI): `provider` picks the model class, `model` (reasoning tier) and
     `fast_model` (operational tier) pick the models, `api_key` and `base_url` pass through.
     `force_fake` wins over any key, so tests can never reach a paid model.
     """
@@ -68,7 +68,6 @@ class Settings:
     max_tokens: int = 4000                  # per call; thinking models count their reasoning against it
     reasoning: str | None = None            # None = model default | none | low | medium | high (openai / openrouter)
     failure_log: Path | None = None         # append failed model calls (prompt, raw output, error) as JSON lines
-    structured: bool = True                 # send each prompt's JSON schema as response_format (openai / openrouter)
 
     standing: str = "judged"                # judged (reasoning model weighs the attached trajectories) | noisy_or (baseline)
     proposed_weight: float = 0.5            # weight of a `proposed` trajectory in standing; confirmed = 1, rejected = 0
@@ -96,7 +95,6 @@ class Settings:
             max_tokens=int(e.get("MISTABRA_MAX_TOKENS") or 4000),
             reasoning=e.get("MISTABRA_REASONING") or None,
             failure_log=Path(e["MISTABRA_FAILURE_LOG"]) if e.get("MISTABRA_FAILURE_LOG") else None,
-            structured=not (e.get("MISTABRA_STRUCTURED", "1").strip().lower() in ("0", "false", "no")),
         )
         for k, v in overrides.items():
             setattr(s, k, v)

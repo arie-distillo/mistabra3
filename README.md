@@ -29,7 +29,8 @@ mistabra_core/          the layer
   core.py               the reference implementation of assess()
   scoring.py            score (documented formula) and standing strategies
   settings.py           provider, models, standing strategy, thresholds
-  llm/                  uniform LLM interface: providers, gateway (cache, call records), prompts, fake provider
+  llm/                  model access via PydanticAI (output tools, validation retries), gateway (cache, call records,
+                        failure log), prompts, fake model
 testbed/                quality measurement
   scenario.py           one scenario format + adapters for the PoC labelled set, ACH case files, phase-1 cases
   harness.py            a stand-in for the other layer (keeps what assess returns) and the runner
@@ -49,7 +50,9 @@ docs/                   the spec
 pip install -e ".[dev]"
 ```
 
-LLM setup is uniform: provider, models, key and base URL from the environment (or `Settings(...)` in code).
+All model calls go through PydanticAI: each prompt's Pydantic schema is the output type, the model answers through an
+output tool, and a validation error is sent back to the model for up to two more attempts. Settings come from `.env`
+(copy `.env.example`), the environment, or `Settings(...)` in code.
 
 ```bash
 export MISTABRA_PROVIDER=anthropic            # anthropic | openrouter | openai (any OpenAI-compatible endpoint) | fake

@@ -1,24 +1,26 @@
-"""Gateway: renders a prompt, calls the provider on the right tier, parses and validates JSON, caches by
-(prompt id, version, provider, model, input) and records every call for provenance.
+"""Gateway: renders a prompt, runs it through PydanticAI on the right tier with the prompt's schema as the output
+type, caches the validated output by (prompt id, version, provider, model, input), records every call for
+provenance (including how many attempts the model needed), and logs failed calls with their full message history.
 
-Adapted from the PoC gateway: the SQLite store is gone (this layer keeps no state between calls);
-the cache is in memory, or on disk when `Settings.cache_path` is set, so repeated testbed runs are cheap
-and identical inputs return identical outputs. Malformed output is an error, not a retry.
+The layer keeps no state between `assess` calls besides this cache: in memory, or on disk when
+`Settings.cache_path` is set, so repeated testbed runs are cheap and identical inputs return identical outputs.
 """
 from __future__ import annotations
 
 import hashlib
 import json
-import re
 import sqlite3
 import threading
 import time
 from pathlib import Path
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
+from pydantic_ai import Agent, capture_run_messages
+from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UnexpectedModelBehavior
+from pydantic_ai.messages import ModelMessagesTypeAdapter
 
 from ..types import LLMCallRecord
-from .base import LLM, LLMOutputError, LLMTransportError
+from .base import OUTPUT_RETRIES, LLMAuthError, LLMError, LLMOutputError, LLMTransportError
 from .prompts import PROMPTS
 
 
@@ -61,92 +63,85 @@ class Recorder:
 
 
 class Gateway:
-    def __init__(self, settings, provider: LLM):
-        self.settings, self.provider = settings, provider
+    def __init__(self, settings, backend):
+        self.settings, self.backend = settings, backend
         self.cache = _Cache(settings.cache_path)
-        self.stats = {"calls": 0, "cached": 0, "errors": 0}
+        self.stats = {"calls": 0, "cached": 0, "errors": 0, "retries": 0}
+        self._agents: dict[tuple, Agent] = {}
 
     def model_for(self, tier: str) -> str:
         return self.settings.model if tier == "reasoning" else self.settings.fast_model
-
-    def _log_failure(self, task, model, user, text, err):
-        path = self.settings.failure_log
-        if path is None:
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "task": task, "model": model, "error": str(err),
-                                "output": text, "prompt": user}, ensure_ascii=False) + "\n")
 
     @staticmethod
     def version_of(task: str) -> str:
         return PROMPTS[task].version
 
-    def call(self, task: str, variables: dict, *, recorder: Recorder | None = None, max_tokens: int | None = None) -> BaseModel:
+    def _agent(self, task: str, tier: str) -> Agent:
+        k = (task, tier)
+        if k not in self._agents:
+            p = PROMPTS[task]
+            self._agents[k] = Agent(self.backend.model(tier), output_type=p.schema, system_prompt=p.system,
+                                    retries=OUTPUT_RETRIES, name=task.replace(".", "_"))
+        return self._agents[k]
+
+    def call(self, task: str, variables: dict, *, recorder: Recorder | None = None) -> BaseModel:
         p = PROMPTS[task]
-        system, user = p.render(variables)
-        max_tokens = max_tokens or self.settings.max_tokens
+        _, user = p.render(variables)
         model = self.model_for(p.tier)
-        key = hashlib.sha256(f"{p.id}|{p.version}|{self.provider.name}|{model}|{user}".encode()).hexdigest()
-        t0, cached, tokens, parsed, err = time.perf_counter(), False, (None, None), None, None
-        text = self.cache.get(key)
-        try:
-            if text is not None:
-                cached = True
-                self.stats["cached"] += 1
-            else:
-                text, tokens = self._complete(model, system, user, max_tokens, p.schema.model_json_schema())
-                self.stats["calls"] += 1
-            parsed = self._parse(text, p.schema)
-            if not cached:
-                self.cache.put(key, text)
-        except (LLMOutputError, LLMTransportError) as e:
-            err = type(e)(f"{task}: {e}")
-            self.stats["errors"] += 1
-            self._log_failure(task, model, user, text, err)
-        if recorder is not None:
-            recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=cached, ok=parsed is not None,
-                                       latency_ms=int((time.perf_counter() - t0) * 1000), tokens_in=tokens[0], tokens_out=tokens[1]))
-        if err is not None:
-            raise err
-        return parsed
-
-    def _complete(self, model, system, user, max_tokens, schema=None, attempts=3):
-        last = None
-        for i in range(attempts):
-            try:
-                return self.provider.complete(model, system, user, max_tokens, schema)
-            except LLMTransportError as e:
-                last = e
-                time.sleep(min(0.5 * 2 ** i, 4))
-        raise last
-
-    @staticmethod
-    def _parse(text: str | None, schema: type[BaseModel]) -> BaseModel:
-        if not text or not text.strip():
-            raise LLMOutputError("empty output")
-        s = re.sub(r"<think>.*?(</think>|$)", "", text.strip(), flags=re.S).strip()   # reasoning echoed into content
-        m = re.search(r"```(?:json)?\s*(.*?)```", s, re.S)
-        if m:
-            s = m.group(1).strip()
-        data = None
-        pairs = sorted((("{", "}"), ("[", "]")), key=lambda oc: s.find(oc[0]) if s.find(oc[0]) >= 0 else len(s))
-        for opener, closer in pairs:   # whichever structure starts first
-            i, j = s.find(opener), s.rfind(closer)
-            if i >= 0 and j > i:
+        key = hashlib.sha256(f"{p.id}|{p.version}|{self.backend.name}|{model}|{user}".encode()).hexdigest()
+        t0 = time.perf_counter()
+        hit = self.cache.get(key)
+        if hit is not None:
+            self.stats["cached"] += 1
+            if recorder is not None:
+                recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=True, ok=True, latency_ms=0))
+            return p.schema.model_validate_json(hit)
+        out, usage, err = None, None, None
+        for attempt in range(3):
+            with capture_run_messages() as messages:
                 try:
-                    data = json.loads(s[i:j + 1])
+                    res = self._agent(task, p.tier).run_sync(user, model_settings=self.backend.model_settings())
+                    out, usage = res.output, res.usage
                     break
-                except json.JSONDecodeError:
-                    continue
-        if data is None:
-            raise LLMOutputError(f"no JSON in output: {text.strip()[:300]!r}")
-        if isinstance(data, list):   # a bare list where the schema has exactly one list field: wrap it
-            lists = [n for n, f in schema.model_fields.items() if "list" in str(f.annotation)]
-            if len(lists) != 1:
-                raise LLMOutputError(f"got a JSON list, expected an object: {text.strip()[:300]!r}")
-            data = {lists[0]: data}
+                except ModelHTTPError as e:
+                    if e.status_code in (401, 403):
+                        err = LLMAuthError(f"{task}: HTTP {e.status_code}: {str(e.body)[:300]}")
+                    elif e.status_code == 429 or e.status_code >= 500:
+                        err = LLMTransportError(f"{task}: HTTP {e.status_code}: {str(e.body)[:200]}")
+                    else:
+                        err = LLMError(f"{task}: HTTP {e.status_code}: {str(e.body)[:300]}")
+                except UnexpectedModelBehavior as e:
+                    err = LLMOutputError(f"{task}: {e}")
+                except ModelAPIError as e:
+                    err = LLMTransportError(f"{task}: {type(e).__name__}: {e}")
+                if not isinstance(err, LLMTransportError) or attempt == 2:
+                    self._log_failure(task, model, user, messages, err)
+                    break
+                time.sleep(min(0.5 * 2 ** attempt, 4))
+        latency = int((time.perf_counter() - t0) * 1000)
+        if out is None:
+            self.stats["errors"] += 1
+            if recorder is not None:
+                recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=False, ok=False, latency_ms=latency))
+            raise err
+        self.stats["calls"] += 1
+        retries = max(0, (usage.requests or 1) - 1)
+        self.stats["retries"] += retries
+        self.cache.put(key, out.model_dump_json())
+        if recorder is not None:
+            recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=False, ok=True, latency_ms=latency,
+                                       tokens_in=usage.input_tokens, tokens_out=usage.output_tokens, retries=retries))
+        return out
+
+    def _log_failure(self, task, model, user, messages, err):
+        path = self.settings.failure_log
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            return schema.model_validate(data)
-        except ValidationError as e:
-            raise LLMOutputError(f"schema mismatch: {e.errors()[:2]} in {text.strip()[:300]!r}") from None
+            history = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
+        except Exception:  # noqa: BLE001 — the log must never hide the original error
+            history = [repr(m) for m in messages]
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "task": task, "model": model, "error": str(err),
+                                "prompt": user, "messages": history}, ensure_ascii=False) + "\n")

@@ -72,7 +72,8 @@ def markdown(reports: list[dict]) -> str:
     for r in reports:
         s = r["settings"]
         out.append(f"- **{s['standing']}** standing: provider `{s['provider']}`, model `{s['model']}`, fast `{s['fast_model']}`; "
-                   f"{r['llm']['calls']} model calls, {r['llm']['cached']} cached, {r['llm']['errors']} errors, {r['seconds']} s")
+                   f"{r['llm']['calls']} model calls, {r['llm']['cached']} cached, {r['llm'].get('retries', 0)} validation retries, "
+                   f"{r['llm']['errors']} errors, {r['seconds']} s")
     if reports and reports[0]["settings"]["provider"] == "fake":
         out += ["", "> Fake provider: these numbers prove the plumbing, not the method. Run with `--live` for measurements."]
     out += ["", "| Metric | " + " | ".join(r["settings"]["standing"] for r in reports) + " |", "| --- |" + " --- |" * len(reports)]

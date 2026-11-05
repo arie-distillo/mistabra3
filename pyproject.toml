@@ -3,7 +3,7 @@ name = "mistabra-core"
 version = "0.3.0"
 description = "Mistabra Core — the reasoning layer of an analyst's co-pilot that turns intuition into reasoning (spec v3)"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2", "httpx>=0.27"]
+dependencies = ["pydantic>=2", "pydantic-ai-slim[openai,anthropic]>=1.0"]
 
 [project.optional-dependencies]
 testbed = ["pyyaml>=6"]
@@ -18,3 +18,4 @@ include = ["mistabra_core*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:pydantic_graph.*"]
