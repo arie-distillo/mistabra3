@@ -187,3 +187,10 @@ def test_nested_json_sent_as_strings_is_decoded():
     p = FakeProvider({"trajectory.abduce": args})
     out = _gw(p).call("trajectory.abduce", {"x": 1})
     assert out.signal.actor == "weather service" and out.trajectories[0].claim.startswith("Heavy rain") and len(p.calls) == 1
+
+
+def test_empty_string_for_an_object_means_not_given():
+    """Qwen 3.5: an irrelevant episode answered with "signal": "" (from a real failure log)."""
+    p = FakeProvider({"trajectory.abduce": '{"relevant": false, "signal": "", "trajectories": []}'})
+    out = _gw(p).call("trajectory.abduce", {"x": 1})
+    assert out.relevant is False and out.signal is None and out.trajectories == [] and len(p.calls) == 1

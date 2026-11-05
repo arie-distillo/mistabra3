@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # ---------------------------------------------------------------- output schemas
 class Out(BaseModel):
     """Base of every output schema. Some models (e.g. Qwen 3.5 via OpenRouter) send nested objects and lists inside tool
-    arguments as JSON-encoded strings — "signal": "{\"actor\": ...}". Such strings are decoded before validation."""
+    arguments as JSON-encoded strings — "signal": "{\"actor\": ...}" — or send "" for "none". Such strings are decoded,
+    and empty strings in non-text fields are treated as not given, before validation."""
 
     @model_validator(mode="before")
     @classmethod
@@ -21,8 +22,15 @@ class Out(BaseModel):
         if isinstance(data, str) and data.strip()[:1] in ("{", "["):
             data = _loads(data)
         if isinstance(data, dict):
-            data = {k: (_loads(v) if isinstance(v, str) and v.strip()[:1] in ("{", "[") and k in cls.model_fields
-                        and not _is_str_field(cls, k) else v) for k, v in data.items()}
+            out = {}
+            for k, v in data.items():
+                if isinstance(v, str) and k in cls.model_fields and not _is_str_field(cls, k):
+                    if not v.strip():
+                        continue                      # "" for an object / list / number: not given, use the default
+                    if v.strip()[:1] in ("{", "["):
+                        v = _loads(v)
+                out[k] = v
+            data = out
         return data
 
 
