@@ -1,0 +1,39 @@
+id: flood_control
+title: Urban flood — control, the second episode removes the concern
+kind: sequence
+control: true
+note: >
+  Same rain forecast, but the second episode reports the drains were just cleared and upgraded. Standing of the
+  drainage hypothesis should stay low: the episodes do not combine into a concern.
+mission:
+  version: flood-1
+  documents:
+    - title: Mission
+      text: >
+        The Northfield city resilience office protects residents of the lower districts (Riverside and Canal
+        Quarter) from flooding. The lower districts sit below the river level and rely on the storm drain
+        network and two pumping stations. Drain maintenance (clearing inlets and culverts) is funded yearly.
+  risks:
+    - id: flood
+      text: Urban flooding in the lower districts damages homes and endangers residents.
+steps:
+  - label: rain
+    episode:
+      text: The weather service forecasts heavy rain over Northfield for Thursday and Friday, about 60 mm in 48 hours.
+      source: weather service
+      credibility: 0.9
+      occurred: "2026-10-20T08:00:00Z"
+    risk: flood
+    expect: {band: weak}
+  - label: drains_cleared
+    episode:
+      text: >
+        The public works department completed the autumn clearing of all inlets and culverts in Canal Quarter and
+        Riverside last week, and the second pumping station was upgraded on schedule.
+      source: public works report
+      credibility: 0.9
+      occurred: "2026-10-21T09:00:00Z"
+    risk: flood
+    expect: {band: none}
+final:
+  jointly_strong: {hypothesis: "step:rain", min_standing: 0.5, max_single: 0.5}

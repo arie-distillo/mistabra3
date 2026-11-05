@@ -1,0 +1,25 @@
+id: stability_elm
+title: Score stability — paraphrases of the same episode against the same hypothesis
+kind: stability
+note: >
+  Each variant is assessed against the same stored hypothesis (pattern 7). Paraphrases should score within a
+  tolerance of each other (A5). Variants are not kept between calls' standing comparison: only `score` is measured.
+mission:
+  version: cs-stab-1
+  documents:
+    - title: About
+      text: The Community Safety Trust supports the members and institutions of Community X in Northfield (Elm Street, Maple Road, the Community Centre).
+  risks:
+    - id: attack
+      text: Hateful radicals attack members of Community X, their homes, or community institutions.
+operational:
+  hypotheses:
+    - {id: H_elm, risk_id: attack, claim: "Homes on Elm Street are a target of hostile preparation", origin: analyst, status: open}
+    - {id: H_centre, risk_id: attack, claim: "The Community Centre is a target of hostile preparation", origin: analyst, status: open}
+steps:
+  - {episode: {id: p1a, text: "A passer-by photographed the front of Jens Hofer's house on Elm Street while walking past in the morning.", source: Field reports, credibility: 0.8}, hypothesis: H_elm, risk: attack, expect: {variant_of: passer_by}}
+  - {episode: {id: p1b, text: "In the morning someone walking along Elm Street took a photo of the front of Jens Hofer's house.", source: Field reports, credibility: 0.8}, hypothesis: H_elm, risk: attack, expect: {variant_of: passer_by}}
+  - {episode: {id: p1c, text: "Jens Hofer's house on Elm Street was photographed from the pavement by a man walking by, in the morning.", source: Field reports, credibility: 0.8}, hypothesis: H_elm, risk: attack, expect: {variant_of: passer_by}}
+  - {episode: {id: p2a, text: "From a grey Volkswagen with covered plates parked on Maple Road, a hooded person filmed the entrances of the Community Centre for over an hour at night through a telephoto lens.", source: Police liaison bulletin, credibility: 0.9}, hypothesis: H_centre, risk: attack, expect: {variant_of: hooded}}
+  - {episode: {id: p2b, text: "A person in a hood, sitting in a grey VW whose plates were covered, spent more than an hour at night filming the Community Centre entrances with a telephoto lens from Maple Road.", source: Police liaison bulletin, credibility: 0.9}, hypothesis: H_centre, risk: attack, expect: {variant_of: hooded}}
+  - {episode: {id: p2c, text: "At night, for over an hour, the Community Centre's entrances were filmed through a long lens by someone hooded in a grey Volkswagen with obscured plates on Maple Road.", source: Police liaison bulletin, credibility: 0.9}, hypothesis: H_centre, risk: attack, expect: {variant_of: hooded}}

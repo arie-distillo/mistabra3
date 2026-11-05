@@ -1,0 +1,29 @@
+id: noise_drift
+title: Self-reinforcement check — ordinary episodes must not build a hypothesis
+kind: noise
+note: >
+  A stream of ordinary, explained episodes about the same places. Each may be weakly linked to a hypothesis and is
+  kept as a proposed trajectory. No system hypothesis should reach standing 0.5 from the layer's own unconfirmed
+  trajectories alone (A6).
+mission:
+  version: cs-noise-1
+  documents:
+    - title: About
+      text: >
+        The Community Safety Trust supports the members and institutions of Community X in Northfield: the
+        Community Centre on Maple Road and the Place of Worship on Church Lane. Most reports describe ordinary
+        life: deliveries, visitors, tradespeople, tourists photographing the older buildings on Church Lane.
+  risks:
+    - id: attack
+      text: Hateful radicals attack members of Community X, their homes, or community institutions.
+steps:
+  - episode: {text: "A tour group led by a guide photographed the Place of Worship on Church Lane.", source: Field reports, credibility: 0.8, occurred: "2026-08-01T10:00:00Z"}
+  - episode: {text: "An estate agent with a company lanyard photographed a house for sale on Church Lane.", source: Field reports, credibility: 0.8, occurred: "2026-08-02T11:00:00Z"}
+  - episode: {text: "A marked ParcelGo delivery van stopped at the Community Centre twice in one afternoon.", source: Community hotline, credibility: 0.6, occurred: "2026-08-03T15:00:00Z"}
+  - episode: {text: "An architecture student sketched the facade of the Place of Worship for a class assignment.", source: Field reports, credibility: 0.8, occurred: "2026-08-04T14:00:00Z"}
+  - episode: {text: "A council inspector photographed the Community Centre car park for a planning decision.", source: Field reports, credibility: 0.8, occurred: "2026-08-05T09:00:00Z"}
+  - episode: {text: "A wedding photographer took pictures outside the Place of Worship on Saturday.", source: Social media monitoring, credibility: 0.5, occurred: "2026-08-06T13:00:00Z"}
+  - episode: {text: "A tourist asked a volunteer for the opening hours of the Community Centre exhibition.", source: Field reports, credibility: 0.8, occurred: "2026-08-07T12:00:00Z"}
+  - episode: {text: "A journalist from the Northfield Gazette photographed the Community Centre for a bylined story on the festival.", source: Field reports, credibility: 0.8, occurred: "2026-08-08T10:00:00Z"}
+final:
+  max_standing: 0.5

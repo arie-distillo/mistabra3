@@ -1,0 +1,45 @@
+id: flood_conjunction
+title: Urban flood — two individually weak episodes that are strong together
+kind: sequence
+note: >
+  Neither the rain forecast nor the budget cut alone makes a flood in the lower districts likely; together they do.
+  Expected: the first episode articulates a hypothesis about drainage capacity, the second matches it, and the
+  hypothesis's standing ends high although each episode's own score stays low.
+mission:
+  version: flood-1
+  documents:
+    - title: Mission
+      text: >
+        The Northfield city resilience office protects residents of the lower districts (Riverside and Canal
+        Quarter) from flooding. The lower districts sit below the river level and rely on the storm drain
+        network and two pumping stations. Drain maintenance (clearing inlets and culverts) is funded yearly.
+    - title: History
+      text: >
+        2021: a summer storm flooded Canal Quarter after leaves blocked the main culvert; the drains had not been
+        cleared that season. Lesson: heavy rain is routine, heavy rain on uncleared drains is not.
+  risks:
+    - id: flood
+      text: Urban flooding in the lower districts damages homes and endangers residents.
+    - id: heat
+      text: A heatwave overwhelms care homes in the city.
+steps:
+  - label: rain
+    episode:
+      text: The weather service forecasts heavy rain over Northfield for Thursday and Friday, about 60 mm in 48 hours.
+      source: weather service
+      credibility: 0.9
+      occurred: "2026-10-20T08:00:00Z"
+    risk: flood
+    expect: {band: weak}
+  - label: budget
+    episode:
+      text: >
+        The council minutes record that this year's drain maintenance budget for the lower districts was cut by
+        half, and the autumn clearing of inlets and culverts in Canal Quarter has been postponed.
+      source: council minutes
+      credibility: 0.9
+      occurred: "2026-10-21T09:00:00Z"
+    risk: flood
+    expect: {band: weak, matches: "step:rain"}
+final:
+  jointly_strong: {hypothesis: "step:rain", min_standing: 0.5, max_single: 0.5}
