@@ -30,7 +30,8 @@ HEADLINE = [
     ("A1_score", "band_accuracy", "score in the labelled band"), ("A1_score", "hard_negative_auroc", "positives above hard negatives (AUROC)"),
     ("A1_score", "orderings_satisfied", "ordering constraints held"), ("A1_score", "signal_recall", "labelled positives raised a group"),
     ("A1_score", "false_signal_rate", "everyday episodes raised a group"),
-    ("A2_lambda", "missing_articulated", "missing hypothesis articulated"), ("A2_lambda", "missing_established", "… and reached standing ≥ 0.5"),
+    ("A2_lambda", "missing_articulated", "missing hypothesis articulated (same mechanism)"),
+    ("A2_lambda", "missing_partial", "… at least partly"), ("A2_lambda", "missing_established", "… and reached standing ≥ 0.5"),
     ("A2_lambda", "control_false_alarm", "controls with an established Lambda hypothesis"), ("A2_lambda", "flag_accuracy", "Lambda flags as expected"),
     ("A3_combination", "jointly_strong_detected", "weak episodes combined into high standing"), ("A3_combination", "control_false_joint", "… in controls"),
     ("A3_combination", "refutation_auroc", "refuted vs supported stated hypotheses (AUROC)"),
@@ -76,7 +77,9 @@ def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4) -> 
         log(f"STOPPED: the provider rejected the API key — {stop[0]}\n"
             f"Check the key in .env (MISTABRA_API_KEY, or the provider's own variable) belongs to provider '{settings.provider}'.")
         raise SystemExit(3)
-    metrics = all_metrics([r for r in results if r.error is None])
+    from . import grader
+    grade = grader.lexical() if core.provider.name == "fake" else grader.model(core.gw)
+    metrics = all_metrics([r for r in results if r is not None and r.error is None], grade=grade)
     return {"settings": {"provider": core.provider.name, "model": settings.model, "fast_model": settings.fast_model, "standing": settings.standing,
                          "proposed_weight": settings.proposed_weight}, "llm": dict(core.gw.stats), "seconds": round(time.time() - t0, 1),
             "metrics": metrics, "scenarios": [asdict(r) for r in results]}
@@ -95,8 +98,8 @@ def markdown(reports: list[dict]) -> str:
     for sec, key, label in HEADLINE:
         out.append(f"| {sec.split('_')[0]} {label} | " + " | ".join(str(r["metrics"][sec].get(key)) for r in reports) + " |")
     m = reports[0]["metrics"]
-    out += ["", "## Lambda hypotheses (A2)", "", "| Case | Expected | Articulated | Similarity | Standing |", "| --- | --- | --- | --- | --- |"]
-    out += [f"| {e['case']} | {e['expected']} | {e['best']} | {e['similarity']} | {e['standing']} |" for e in m["A2_lambda"]["examples"]]
+    out += ["", "## Lambda hypotheses (A2)", "", "| Case | Expected | Best articulated | Grade | Standing |", "| --- | --- | --- | --- | --- |"]
+    out += [f"| {e['case']} | {e['expected']} | {e['best']} | {e['grade']} | {e['standing']} |" for e in m["A2_lambda"]["examples"]]
     out += ["", "## ACH cases (R1)", ""]
     for c in m["R1_ach"]["cases"]:
         out.append(f"- {c['case']}: Spearman {c['spearman']}; standing {c['standing']}; expected midpoints {c['expected_mid']}")

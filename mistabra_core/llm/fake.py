@@ -179,79 +179,74 @@ class FakeProvider:
         qs += [{"query": f"Episodes bearing on: {h}"} for h in d.get("hypotheses", [])[:4]]
         return {"radars": qs}
 
-    def _radar_read(self, d):
-        text, q = d["episode_text"], d["radar_query"]
-        ov = overlap(text, q)
+    # ---- triage
+    def _episode_triage(self, d):
+        text = d["episode"]["text"]
+        touches = [h["id"] for h in d.get("held_hypotheses", []) if overlap(text, h["claim"]) >= 2]
         attention = bool(keys(text) & {"photograph", "address", "hurt", "shotgun", "rain", "budget", "ventilation"})
-        rel = ov >= 2 or (ov >= 1 and (bool(mods(text)) or attention))
-        return {"relevant": rel, "confidence": 0.8 if rel else 0.85, "content": content(text) if rel else None}
+        radar = next((r["index"] for r in d.get("radars", []) if (ov := overlap(text, r["query"])) >= 2 or (ov >= 1 and (bool(mods(text)) or attention))), None)
+        low = text.lower()
+        novel = overlap(text, d["risk_text"]) >= 1 and any(k in low for k in NOVEL) and len(low) > 40
+        rel = radar is not None or bool(touches) or novel
+        return {"relevant": rel, "confidence": 0.8 if rel else 0.85, "radar": radar, "touches": touches,
+                "why": "fake triage" if rel else "", "content": content(text) if rel else None}
 
-    def _signal_lambda_check(self, d):
-        text, low = d["episode_text"], d["episode_text"].lower()
-        rel = overlap(text, d["risk_text"]) >= 1 and any(k in low for k in NOVEL) and len(low) > 40
-        return {"relevant": rel, "confidence": 0.6 if rel else 0.9, "why": "an unanticipated means bearing on the risk" if rel else "",
-                "content": content(text) if rel else None}
-
-    # ---- abduction
-    def _trajectory_abduce(self, d):
-        ep = d["episode"]["text"]
-        sig = d.get("signal")
-        sig_text = ep + " " + ((sig or {}).get("note") or (sig or {}).get("summary") or "")
-        out_signal = None if sig else content(ep)
-        reach = reach_of(ep)
-        if d.get("given_hypothesis"):
-            claim = d["given_hypothesis"]
-            return {"relevant": True, "signal": out_signal, "trajectories": [{
-                "hypothesis_id": "given", "claim": None, "match_confidence": 1.0, "reach": reach, "fit": fit_of(sig_text, claim),
-                "rationale": f"If {claim.lower()}, the episode is a step toward: {d['risk_text']}", "entities": entities(ep),
-                "missing": ["occurrence time"] if not d["episode"].get("occurred") else []}]}
-        stored = d.get("stored_hypotheses", []) + d.get("rejected_hypotheses", [])
-        scored = sorted(((overlap(sig_text, h["claim"]), h) for h in stored), key=lambda x: -x[0])
-        trs = []
-        for ov, h in scored:
-            if ov >= 2 and len(trs) < d.get("max", 3):
-                trs.append({"hypothesis_id": h["id"], "claim": None, "match_confidence": round(min(0.95, 0.45 + 0.1 * ov), 2),
-                            "reach": reach, "fit": fit_of(sig_text, h["claim"]),
-                            "rationale": f"The episode bears on the stored hypothesis '{h['claim']}'.", "entities": entities(ep), "missing": []})
-        negating = any(w in ep.lower() for w in ("cleared", "completed", "upgraded", "restored", "within normal", "ruled out"))
-        stored_out = []
-        for h in d.get("stored_hypotheses", []):
-            ov = overlap(sig_text, h["claim"])
-            stance = "unrelated" if ov < 2 else ("weakens" if negating else "supports")
-            stored_out.append({"hypothesis_id": h["id"], "stance": stance, "fit": 0.1 if stance == "weakens" else fit_of(sig_text, h["claim"]),
-                               "rationale": f"fake: {stance}"})
-        if negating:
-            trs = [t for t in trs if t["hypothesis_id"] is None]
-        relevant = bool(trs) or overlap(sig_text, d["risk_text"]) >= 1 or bool(sig) or bool(mods(ep))
-        if not trs and relevant:
-            claim = claim_for(sig_text, d["risk_text"])
-            trs.append({"hypothesis_id": None, "claim": claim, "match_confidence": 0.0, "reach": reach, "fit": fit_of(sig_text, claim),
-                        "rationale": f"If {claim}, the episode is a step toward: {d['risk_text']}", "entities": entities(ep),
-                        "missing": ["occurrence time"] if not d["episode"].get("occurred") else []})
-        if negating and any(x["stance"] == "weakens" for x in stored_out):
-            trs = []
-        return {"relevant": relevant, "signal": out_signal if relevant else None, "trajectories": trs, "stored": stored_out}
-
-    def _trajectory_baselines(self, d):
-        ep = d["episode"]["text"]
+    # ---- assessment
+    def _baselines(self, ep, stored, max_new):
         low = ep.lower()
-        base = 0.85 if benign(ep) else 0.5
-        f = round(max(0.05, base - 0.15 * len(mods(ep))), 3)
+        f = round(max(0.05, (0.85 if benign(ep) else 0.5) - 0.15 * len(mods(ep))), 3)
         assessed = [{"baseline_id": b["id"], "fit": f, "ordinary_outcome": b["claim"], "rationale": f"If {b['claim']}, the episode is ordinary."}
-                    for b in d.get("stored_baselines", [])]
+                    for b in stored]
         new = []
         if not assessed or benign(ep):
             outs = next(o for pat, o in ORDINARY if re.search(pat, low))
-            have = {b["claim"].lower() for b in d.get("stored_baselines", [])}
+            have = {b["claim"].lower() for b in stored}
             new = [{"claim": c, "ordinary_outcome": o, "rationale": f"If {c}, the episode is ordinary and ends in {o}.", "fit": f}
-                   for o, c in outs if c.lower() not in have][: d.get("max_new", 3)]
+                   for o, c in outs if c.lower() not in have][: max_new if not stored else 1]
         return {"assessed": assessed, "new": new}
+
+    def _episode_assess(self, d):
+        ep = d["episode"]["text"]
+        sig = d.get("signal")
+        sig_text = ep + " " + ((sig or {}).get("note") or (sig or {}).get("summary") or "")
+        out_signal = None if (sig or d.get("detected_signal")) else content(ep)
+        reach, mb = reach_of(ep), d.get("max_new_baselines", 3)
+        missing = ["occurrence time"] if not d["episode"].get("occurred") else []
+        g = d.get("given_hypothesis")
+        if g:
+            return {"relevant": True, "signal": out_signal, "given": {
+                "stance": "supports", "fit": fit_of(sig_text, g["claim"]), "reach": reach, "entities": entities(ep), "missing": missing,
+                "rationale": f"If {g['claim'].lower()}, the episode is a step toward: {d['risk_text']}",
+                "baselines": self._baselines(ep, g.get("baselines", []), mb)}, "stored": [], "new": []}
+        negating = any(w in ep.lower() for w in ("cleared", "completed", "upgraded", "restored", "within normal", "ruled out"))
+        stored = []
+        for h in d.get("held_hypotheses", []):
+            ov = overlap(sig_text, h["claim"])
+            stance = "unrelated" if ov < 2 else ("weakens" if negating else "supports")
+            v = {"hypothesis_id": h["id"], "stance": stance, "confidence": round(min(0.95, 0.45 + 0.1 * ov), 2),
+                 "fit": 0.1 if stance == "weakens" else fit_of(sig_text, h["claim"]), "reach": reach, "missing": [],
+                 "rationale": f"The episode bears on the held hypothesis '{h['claim']}' ({stance})."}
+            if stance == "supports":
+                v["baselines"] = self._baselines(ep, h.get("baselines", []), mb)
+            stored.append(v)
+        relevant = any(v["stance"] != "unrelated" for v in stored) or overlap(sig_text, d["risk_text"]) >= 1 or bool(sig) or bool(mods(ep))
+        new = []
+        if relevant and not any(v["stance"] != "unrelated" for v in stored) and d.get("max_new", 2) > 0:
+            claim = claim_for(sig_text, d["risk_text"])
+            new.append({"claim": claim, "fit": fit_of(sig_text, claim), "reach": reach, "entities": entities(ep), "missing": missing,
+                        "rationale": f"If {claim}, the episode is a step toward: {d['risk_text']}", "baselines": self._baselines(ep, [], mb)})
+        return {"relevant": relevant, "signal": out_signal if relevant else None, "stored": stored, "new": new}
 
     # ---- standing
     def _standing_judge(self, d):
-        p, n = 1.0, 0
-        for t in d["trajectories"]:
-            p *= 1 - t["weight"] * t["score"]
-            n += t["weight"] > 0 and t["score"] < 0.5
-        v = 1 - p + (0.08 if n >= 2 else 0.0)
-        return {"value": round(min(1.0, v), 3), "rationale": "fake: weighted noisy-OR with a bonus for several weak trajectories"}
+        def nor(ts):
+            p, damp, n = 1.0, 1.0, 0
+            for t in ts:
+                if t.get("stance") == "weakens":
+                    damp *= 1 - 0.5 * t["weight"]
+                    continue
+                p *= 1 - t["weight"] * t["score"]
+                n += t["weight"] > 0 and t["score"] < 0.5
+            return round(min(1.0, (1 - p + (0.08 if n >= 2 else 0.0)) * damp), 3)
+        return {"standings": [{"key": h["key"], "before": nor(h["trajectories"]), "value": nor(h["trajectories"] + [h["this"]]),
+                               "rationale": "fake: weighted noisy-OR with a bonus for several weak trajectories"} for h in d["hypotheses"]]}

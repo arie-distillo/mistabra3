@@ -59,7 +59,7 @@ class Settings:
     """
     provider: str = "fake"                  # fake | anthropic | openai (any OpenAI-compatible endpoint) | openrouter
     model: str = ""                         # reasoning tier: abduction, baselines, standing
-    fast_model: str = ""                    # operational tier: radar reads, Lambda-signal check (defaults to model)
+    fast_model: str = ""                    # operational tier: episode triage (defaults to model)
     api_key: str | None = None
     base_url: str | None = None
     force_fake: bool = False
@@ -73,10 +73,10 @@ class Settings:
 
     standing: str = "judged"                # judged (reasoning model weighs the attached trajectories) | noisy_or (baseline)
     proposed_weight: float = 0.5            # weight of a `proposed` trajectory in standing; confirmed = 1, rejected = 0
-    relevance_threshold: float = 0.5        # radar read / Lambda-signal check confidence needed to proceed
-    match_threshold: float = 0.6            # below this the abducer's match to a stored hypothesis is treated as new
+    relevance_threshold: float = 0.5        # triage confidence needed to proceed
+    match_threshold: float = 0.6            # a 'supports' verdict on a held hypothesis needs this confidence
     max_baselines: int = 3
-    max_trajectories: int = 3               # per risk, when the layer completes the hypothesis
+    max_trajectories: int = 2               # new hypotheses per episode and risk (held ones get a verdict each)
     max_attached: int = 30                  # attached trajectories weighed in standing (most recent kept)
     extra: dict = field(default_factory=dict)
 

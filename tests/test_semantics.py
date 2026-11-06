@@ -37,17 +37,22 @@ def test_stored_baselines_reused_and_new_only_when_uncovered(core, mission, op):
     assert not any(b.hypothesis.source == "articulated" for b in g.baselines)   # the stored one covers it: nothing new
 
 
-def test_low_match_confidence_is_treated_as_new(mission, op):
-    over = {"trajectory.abduce": {"relevant": True, "signal": None, "trajectories": [
-        {"hypothesis_id": "H_elm", "claim": "Elm Street homes are being watched by someone", "match_confidence": 0.3, "reach": 0.3, "fit": 0.5}]}}
+def test_low_confidence_verdict_is_not_a_match(mission, op):
+    over = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm", "stance": "supports", "confidence": 0.3, "fit": 0.5, "reach": 0.3}],
+                               "new": [{"claim": "Elm Street homes are being watched by someone", "fit": 0.5, "reach": 0.3}]}}
+    a = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack"))
+    assert [(g.target.hypothesis.source, g.target.hypothesis.claim[:15]) for g in a.groups] == [("articulated", "Elm Street home")]
+
+
+def test_new_claim_restating_a_held_one_is_that_one(mission, op):
+    over = {"episode.assess": {"new": [{"claim": "homes on Elm Street are a target of hostile preparation.", "fit": 0.5, "reach": 0.3}]}}
     t = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack")).groups[0].target
-    assert t.hypothesis.source == "articulated" and t.hypothesis.claim.startswith("Elm Street homes")
+    assert t.hypothesis.source == "predefined" and t.hypothesis.id == "H_elm" and not t.lambda_hypothesis
 
 
 def test_rejected_claim_never_rearticulated(mission, op):
-    over = {"trajectory.abduce": {"relevant": True, "signal": None, "trajectories": [
-        {"hypothesis_id": None, "claim": "The Place of Worship is a target of hostile preparation", "reach": 0.3, "fit": 0.6}]},
-        "radar.read": {"relevant": True, "confidence": 0.9, "content": {"summary": "night photography of entrances"}}}
+    over = {"episode.assess": {"new": [{"claim": "The Place of Worship is a target of hostile preparation", "reach": 0.3, "fit": 0.6}]},
+            "episode.triage": {"relevant": True, "confidence": 0.9, "radar": 0, "content": {"summary": "night photography of entrances"}}}
     core = make_core(over)
     ti = TrajectoryInput(episode=ep("Someone photographed the Place of Worship entrances at night."), risk="attack")
     assert core.assess(mission, op, ti).groups == ()                          # scope given: rejected hypothesis not reported
@@ -126,7 +131,8 @@ def test_provenance_lists_what_was_read_and_called(core, mission, op):
     p = a.provenance
     assert p.implementation == "reference" and p.mission_version == "m1" and p.deterministic
     assert {"H_elm", "B_listing", "c"} <= set(p.operational_items) and p.operational_items["H_elm"] == 1
-    assert {"trajectory.abduce", "trajectory.baselines", "standing.judge"} <= set(p.prompts) and p.calls
+    assert {"episode.assess", "standing.judge"} <= set(p.prompts) and p.calls
+    assert len([c for c in p.calls if c.task == "standing.judge"]) == 1          # one standing call for all touched hypotheses
     assert len(p.input_hash) == 16
 
 
@@ -155,17 +161,23 @@ def test_radars_follow_the_stored_hypotheses(core, mission, op):
 
 
 # ---------------------------------------------------------------- counter-evidence (stance)
-WEAKENS = {"trajectory.abduce": {"relevant": True, "signal": None, "trajectories": [],
-                                 "stored": [{"hypothesis_id": "H_elm", "stance": "weakens", "fit": 0.1, "rationale": "the visitor was the new tenant"},
-                                            {"hypothesis_id": "H_centre", "stance": "unrelated"}]}}
+WEAKENS = {"episode.assess": {"relevant": True, "new": [],
+                              "stored": [{"hypothesis_id": "H_elm", "stance": "weakens", "fit": 0.1, "rationale": "the visitor was the new tenant"},
+                                         {"hypothesis_id": "H_centre", "stance": "unrelated"}]}}
+
+
+def _judge(fn):
+    """A standing.judge override from a per-hypothesis function (hypothesis dict -> (before, value))."""
+    return lambda d: {"standings": [dict(zip(("before", "value"), fn(h)), key=h["key"], rationale="x") for h in d["hypotheses"]]}
 
 
 def test_counter_evidence_attaches_as_weakens(mission, op):
     a = make_core(WEAKENS).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack"))
     assert len(a.groups) == 1
-    t = a.groups[0].target
+    g = a.groups[0]
+    t = g.target
     assert t.hypothesis.id == "H_elm" and t.hypothesis.source == "predefined" and t.stance == "weakens" and t.score == 0.0
-    assert "tenant" in t.rationale
+    assert "tenant" in t.rationale and g.baselines == ()
 
 
 @pytest.mark.parametrize("strategy", ["judged", "noisy_or"])
@@ -178,30 +190,42 @@ def test_counter_evidence_lowers_standing(mission, op, strategy):
 
 def test_judge_that_ignores_counter_evidence_is_damped(mission, op):
     ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
-    over = {**WEAKENS, "standing.judge": {"value": 0.6, "rationale": "unchanged"}}   # the judge does not lower it
+    over = {**WEAKENS, "standing.judge": _judge(lambda h: (0.6, 0.6))}   # the judge does not lower it
     s = make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep(HOUSE, eid="new"), risk="attack")).groups[0].standing
     assert s.without == 0.6 and s.value == 0.45            # damped by half its weight (proposed: 0.5)
 
 
 def test_supporting_episode_never_lowers_standing(mission, op):
     ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
-    over = {"trajectory.abduce": {"relevant": True, "trajectories": [{"hypothesis_id": "H_elm", "match_confidence": 0.9, "fit": 0.6, "reach": 0.3}]},
-            "standing.judge": lambda v: {"value": 0.7 if v["previous_standing"] is None else 0.3, "rationale": "x"}}
+    over = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm", "stance": "supports", "confidence": 0.9, "fit": 0.6, "reach": 0.3}]},
+            "standing.judge": _judge(lambda h: (0.7, 0.3))}
     s = make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0].standing
     assert s.without == 0.7 and s.value == 0.7 and s.delta == 0.0
 
 
-def test_judge_sees_the_standing_before_this_episode(mission, op):
-    ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
+def test_before_is_zero_without_weighted_evidence(mission, op):
+    over = {**WEAKENS, "standing.judge": _judge(lambda h: (0.4, 0.2))}
+    s = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOUSE, eid="new"), risk="attack")).groups[0].standing
+    assert s.without == 0.0 and s.value == 0.0             # nothing attached: nothing to lower
+
+
+def test_one_standing_call_judges_all_touched_hypotheses_together(mission, op):
     seen = []
-    over = {**WEAKENS, "standing.judge": lambda v: (seen.append(v["previous_standing"]), {"value": 0.2, "rationale": "x"})[1]}
+    over = {"episode.assess": {"stored": [{"hypothesis_id": "H_centre", "stance": "supports", "confidence": 0.9, "fit": 0.6, "reach": 0.3},
+                                          {"hypothesis_id": "H_elm", "stance": "weakens", "fit": 0.1}]},
+            "standing.judge": lambda d: (seen.append(d), _judge(lambda h: (0.2, 0.3 if h["this"]["stance"] == "supports" else 0.1))(d))[1]}
+    ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
+    a = make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack"))
+    assert len(seen) == 1 and [h["claim"][:7] for h in seen[0]["hypotheses"]] == ["The Com", "Homes o"]
+    assert [(g.target.hypothesis.id, g.target.stance, g.standing.without, g.standing.value) for g in a.groups] == \
+        [("H_centre", "supports", 0.0, 0.3), ("H_elm", "weakens", 0.2, 0.1)]
+
+
+def test_held_hypotheses_carry_their_evidence_into_the_assessment(mission, op):
+    seen = []
+    over = {"episode.assess": lambda d: (seen.append(d), {"relevant": False})[1]}
+    ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
     make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep(HOUSE, eid="new"), risk="attack"))
-    assert sorted(seen, key=lambda x: (x is not None, x)) == [None, 0.2]
-
-
-def test_supporting_trajectories_listed_before_counter_evidence(mission, op):
-    over = {"trajectory.abduce": {"relevant": True, "signal": None,
-                                  "trajectories": [{"hypothesis_id": "H_centre", "match_confidence": 0.9, "fit": 0.6, "reach": 0.3}],
-                                  "stored": [{"hypothesis_id": "H_elm", "stance": "weakens", "fit": 0.1}]}}
-    a = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOODED), risk="attack"))
-    assert [(g.target.hypothesis.id, g.target.stance) for g in a.groups] == [("H_centre", "supports"), ("H_elm", "weakens")]
+    elm = next(h for h in seen[0]["held_hypotheses"] if h["id"] == "H_elm")
+    assert elm["evidence"] == [""] or len(elm["evidence"]) == 1
+    assert elm["baselines"] == [{"id": "B_listing", "claim": "the person has a property interest"}]

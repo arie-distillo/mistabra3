@@ -109,17 +109,17 @@ class Gateway:
     def version_of(task: str) -> str:
         return PROMPTS[task].version
 
-    def _agent(self, task: str, tier: str) -> Agent:
-        k = (task, tier)
+    def _agent(self, p, tier: str) -> Agent:
+        k = (p.id, p.version, tier)
         with self._lock:
             if k not in self._agents:
-                p = PROMPTS[task]
                 self._agents[k] = Agent(self.backend.model(tier), output_type=p.schema, system_prompt=p.system,
-                                        retries=OUTPUT_RETRIES, name=task.replace(".", "_"))
+                                        retries=OUTPUT_RETRIES, name=p.id.replace(".", "_"))
             return self._agents[k]
 
-    def call(self, task: str, variables: dict, *, recorder: Recorder | None = None) -> BaseModel:
-        p = PROMPTS[task]
+    def call(self, task: str, variables: dict, *, recorder: Recorder | None = None, prompt=None) -> BaseModel:
+        """Run one prompt. `prompt` lets a caller outside the layer (the testbed's grader) bring its own versioned prompt."""
+        p = prompt or PROMPTS[task]
         _, user = p.render(variables)
         model = self.model_for(p.tier)
         key = hashlib.sha256(f"{p.id}|{p.version}|{self.backend.name}|{model}|{user}".encode()).hexdigest()
@@ -133,7 +133,7 @@ class Gateway:
             return p.schema.model_validate_json(hit)
         out, usage, err = None, None, None
         loop = self._ensure_loop()
-        agent = self._agent(task, p.tier)
+        agent = self._agent(p, p.tier)
         for attempt in range(4):
             res, messages, e = asyncio.run_coroutine_threadsafe(self._arun(agent, user), loop).result()
             if e is None:

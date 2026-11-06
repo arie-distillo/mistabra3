@@ -4,7 +4,7 @@ import pytest
 from mistabra_core import HypothesisDraft, SignalContent, SignalDraft, TrajectoryInput
 from tests.conftest import DOORS, GROCERIES, HOODED, HOUSE, ep, make_core
 
-NO_RADAR = {"radar.read": {"relevant": False, "confidence": 0.9, "content": None}}
+NO_RADAR = {"episode.triage": {"relevant": False, "confidence": 0.9, "radar": None, "touches": [], "content": None}}
 
 
 @pytest.mark.parametrize("kw,n", [({}, 1), ({"signal": SignalDraft(note="x")}, 2), ({"hypothesis": "H"}, 3), ({"risk": "r"}, 4),
@@ -33,8 +33,17 @@ def test_p1_irrelevant_episode_returns_no_groups(core, mission, op):
     assert core.assess(mission, op, TrajectoryInput(episode=ep(GROCERIES))).groups == ()
 
 
+def test_p1_triage_sees_held_hypotheses_and_irrelevant_stops_there(mission, op):
+    seen = []
+    core = make_core({"episode.triage": lambda d: (seen.append(d), {"relevant": False, "confidence": 0.9})[1]})
+    a = core.assess(mission, op, TrajectoryInput(episode=ep(GROCERIES)))
+    assert a.groups == () and {c.task for c in a.provenance.calls} <= {"radar.derive", "episode.triage"}
+    attack = next(d for d in seen if d["risk_text"].startswith("Hateful"))
+    assert {h["id"] for h in attack["held_hypotheses"]} == {"H_elm", "H_centre", "H_worship"} and attack["radars"]
+
+
 def test_p1_lambda_signal_when_no_radar_matches(mission, op):
-    core = make_core({**NO_RADAR, "signal.lambda_check": {"relevant": True, "confidence": 0.8, "why": "unanticipated", "content": {"summary": "s"}}})
+    core = make_core({"episode.triage": {"relevant": True, "confidence": 0.8, "radar": None, "why": "unanticipated", "content": {"summary": "s"}}})
     a = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE)))
     assert a.groups and all(g.target.signal.source == "articulated" and g.target.lambda_signal for g in a.groups)
 

@@ -3,13 +3,17 @@
     core = Core(Settings.from_env())
     result = core.assess(mission, operational, TrajectoryInput(episode=..., hypothesis=..., risk=...))
 
-Flow per candidate risk: signal (given | radar → predefined | articulated) → abduction (complete the hypothesis,
-match stored ones) → baselines (stored first, new only when uncovered) → score (formula, the episode alone) →
-standing (the hypothesis with everything attached, with and without this episode) → provenance.
+Flow per candidate risk, three model calls:
+  1. episode.triage (fast): is the episode relevant — directly, or through a held hypothesis — and which radar does it
+     answer? Gives the signal (given | predefined | articulated). Skipped when the analyst gives the signal; an
+     irrelevant episode stops here unless the analyst pointed it at a hypothesis or risk.
+  2. episode.assess (reasoning): a verdict on every held hypothesis (supports | weakens | unrelated), new hypotheses
+     only for mechanisms the held ones miss, and for each supported hypothesis its ordinary explanations (baselines).
+  3. standing.judge (reasoning): every hypothesis the episode touched, judged together, before and after this episode.
+Then score (formula, the episode alone) and provenance. radar.derive runs once per state of the held hypotheses.
 
-Independent model calls run in parallel (radar reads, candidate risks, candidate groups, and within a group the
-baselines alongside the standing before this episode); results are combined in a fixed order, so parallelism never
-changes an answer.
+Candidate risks are assessed in parallel; results are combined in a fixed order, so parallelism never changes an
+answer.
 
 The layer reads both contexts and writes neither. Its only state is derived: radars per (mission version, risk,
 stored claims) and the model-output cache, so identical inputs return identical results.
@@ -20,10 +24,11 @@ import hashlib
 import json
 import re
 import threading
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
 from .llm import Gateway, LLMAuthError, LLMError, Recorder, make_backend
-from .llm.prompts import TrajectoryDraft
+from .llm.prompts import BaselinesOut, GivenVerdict
 from .scoring import noisy_or, score_from, uses, weight_of
 from .settings import Settings
 from .types import (AssessedTrajectory, Assessment, AssessmentGroup, Episode, Hypothesis, HypothesisDraft, HypothesisRef,
@@ -46,6 +51,18 @@ def _pmap(fn, items: list) -> list:
         return [fn(x) for x in items]
     with ThreadPoolExecutor(max_workers=min(len(items), 8)) as ex:
         return list(ex.map(fn, items))
+
+
+def _clip(x: float) -> float:
+    return round(max(0.0, min(1.0, float(x))), 3)
+
+
+@dataclass
+class _Entry:
+    """One hypothesis the episode bears on: its reference, the stance, and the model's assessment of it."""
+    href: HypothesisRef
+    stance: str
+    verdict: object
 
 
 class _Run:
@@ -147,152 +164,132 @@ class Core:
                   pointed: bool, run: _Run, include_rejected: bool) -> list[AssessmentGroup]:
         ep = ti.episode
         ctx = self._snippets(mission, ep.text + " " + risk.text, 4)
+        known = {h.id: h for h in op.primaries(risk.id, include_rejected=True)}
+        held = [h for h in known.values() if given_h is None or h.id != given_h.id]
+        run.saw(*held)
 
-        # 1. signal
+        # 1. triage → signal
         if ti.signal is not None:
-            sig_content = ti.signal.content or SignalContent(summary=ti.signal.note)
-            signal = SignalOut(content=sig_content, source="given")
+            signal = SignalOut(content=ti.signal.content or SignalContent(summary=ti.signal.note), source="given")
         else:
-            signal = None
-
-            def read(q):
-                try:
-                    return self.gw.call("radar.read", {"risk_text": risk.text, "radar_query": q, "episode_text": ep.text, "source": ep.source},
-                                        recorder=run.rec)
-                except LLMAuthError:
-                    raise
-                except LLMError:
-                    return None
             queries = self._radar_queries(mission, op, risk, run)
-            for q, out in zip(queries, _pmap(read, queries)):   # the first radar in order that fires
-                if out is not None and out.relevant and out.confidence >= self.settings.relevance_threshold:
-                    signal = SignalOut(content=SignalContent(**self._content(out.content)), source="predefined", radar=q)
-                    break
-            if signal is None and not pointed:
-                out = self.gw.call("signal.lambda_check", {"risk_text": risk.text, "episode_text": ep.text, "context": ctx}, recorder=run.rec)
-                if not (out.relevant and out.confidence >= self.settings.relevance_threshold):
-                    return []
-                signal = SignalOut(content=SignalContent(**self._content(out.content)), source="articulated")
+            tr = self.gw.call("episode.triage", {
+                "risk_text": risk.text, "episode": {"text": ep.text, "source": ep.source},
+                "radars": [{"index": i, "query": q} for i, q in enumerate(queries)],
+                "held_hypotheses": [{"id": h.id, "claim": h.claim, "status": h.status} for h in held]}, recorder=run.rec)
+            relevant = tr.relevant and tr.confidence >= self.settings.relevance_threshold
+            if not relevant and not pointed:
+                return []
+            signal = None
+            if relevant:
+                radar = queries[tr.radar] if tr.radar is not None and 0 <= tr.radar < len(queries) else None
+                signal = SignalOut(content=SignalContent(**self._content(tr.content)), source="predefined" if radar else "articulated",
+                                   radar=radar)
 
-        # 2. abduction
-        stored = op.primaries(risk.id)
-        rejected = [h for h in op.primaries(risk.id, include_rejected=True) if h.status == "rejected"]
-        run.saw(*stored, *rejected)
+        # 2. assess: verdicts on held hypotheses, new ones, baselines
         precedents = op.precedents(risk.id)
         run.saw(*precedents)
-        variables = {
-            "risk_text": risk.text, "context": ctx,
+        baselines_of = {h.id: op.baselines_of(h.id) for h in [*held, *([given_h] if given_h else [])]}
+        run.saw(*(b for bs in baselines_of.values() for b in bs))
+        def held_view(h):
+            ev = [t.signal.summary for t in op.attached(h.id) if t.status != "rejected" and t.episode_id != ep.id][-3:]
+            return {"id": h.id, "claim": h.claim, "status": h.status, "evidence": ev,
+                    "baselines": [{"id": b.id, "claim": b.claim} for b in baselines_of.get(h.id, [])]}
+        out = self.gw.call("episode.assess", {
+            "risk_text": risk.text, "context": ctx, "pointed": pointed,
             "episode": {"text": ep.text, "source": ep.source, "credibility": ep.credibility, "occurred": ep.occurred},
-            "signal": None if ti.signal is None else {**ti.signal.content.model_dump(), "note": ti.signal.note} if ti.signal.content else {"note": ti.signal.note},
+            "signal": None if ti.signal is None else ({**ti.signal.content.model_dump(), "note": ti.signal.note} if ti.signal.content else {"note": ti.signal.note}),
             "detected_signal": None if signal is None or signal.source == "given" else signal.content.model_dump(),
-            "given_hypothesis": given_claim,
-            "stored_hypotheses": [{"id": h.id, "claim": h.claim, "status": h.status} for h in stored if h.id != (given_h.id if given_h else None)],
-            "rejected_hypotheses": [{"id": h.id, "claim": h.claim} for h in rejected],
-            "precedents": [{"claim": op.hypothesis(t.hypothesis_id).claim if op.hypothesis(t.hypothesis_id) else "", "rationale": t.rationale,
+            "given_hypothesis": None if given_claim is None else {
+                "claim": given_claim, "baselines": [{"id": b.id, "claim": b.claim} for b in baselines_of.get(given_h.id if given_h else "", [])]},
+            "held_hypotheses": [] if given_claim else [held_view(h) for h in held],
+            "precedents": [{"claim": known[t.hypothesis_id].claim if t.hypothesis_id in known else "", "rationale": t.rationale,
                             "fit": t.fit, "reach": t.reach} for t in precedents],
-            "max": 1 if given_claim else self.settings.max_trajectories,
-        }
-        ab = self.gw.call("trajectory.abduce", variables, recorder=run.rec)
-        weakened = [x for x in ab.stored if x.stance == "weakens" and op.hypothesis(x.hypothesis_id) is not None]
-        if given_claim is None and not ab.trajectories and not weakened:
-            return []
-        if signal is None:   # pointed at by the analyst, no radar matched: the layer articulates the signal
-            signal = SignalOut(content=SignalContent(**self._content(ab.signal)) if ab.signal else SignalContent(summary=ep.text[:140]),
-                               source="articulated")
-        elif signal.source == "articulated" and ab.signal is not None:
-            signal = SignalOut(content=SignalContent(**self._content(ab.signal)), source="articulated")
+            "max_new": 0 if given_claim else self.settings.max_trajectories,
+            "max_new_baselines": self.settings.max_baselines}, recorder=run.rec)
 
-        drafts = ab.trajectories[:1] if given_claim else ab.trajectories[: self.settings.max_trajectories]
-        if given_claim is None:   # counter-evidence against stored hypotheses becomes trajectories marked "weakens"
-            have = {d.hypothesis_id for d in drafts}
-            drafts += [TrajectoryDraft(hypothesis_id=x.hypothesis_id, match_confidence=1.0, fit=min(x.fit, 0.3), reach=0.0,
-                                       rationale=x.rationale, stance="weakens") for x in weakened if x.hypothesis_id not in have]
-        if given_claim and not drafts:
-            drafts = [TrajectoryDraft(hypothesis_id="given", rationale="The model returned no trajectory for the given hypothesis.")]
-
-        todo, seen = [], set()
-        all_known = {h.id: h for h in op.primaries(risk.id, include_rejected=True)}
-        for d in drafts:
-            href = self._resolve(d, given_h, given_claim, all_known, rejected)
-            if href is None:
-                continue
-            if href.status == "rejected" and href.source != "given" and not include_rejected:
-                continue
-            k = href.id or _norm(href.claim)
-            if k in seen:
-                continue
-            seen.add(k)
-            todo.append((href, d))
-        return _pmap(lambda hd: self._group(op, ti, risk, risk_source, signal, hd[0], hd[1], run), todo)
-
-    def _resolve(self, d, given_h, given_claim, known: dict[str, Hypothesis], rejected: list[Hypothesis]) -> HypothesisRef | None:
+        entries: list[_Entry] = []
         if given_claim is not None:
-            if given_h is not None:
-                return HypothesisRef(source="given", id=given_h.id, version=given_h.version, claim=given_h.claim,
-                                     entities=given_h.entities, status=given_h.status)
-            return HypothesisRef(source="given", claim=given_claim, entities=tuple(d.entities))
-        if d.hypothesis_id and d.hypothesis_id in known and d.match_confidence >= self.settings.match_threshold:
-            h = known[d.hypothesis_id]
-            return HypothesisRef(source="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
-                                 match_confidence=round(d.match_confidence, 3), status=h.status)
-        claim = (d.claim or (known[d.hypothesis_id].claim if d.hypothesis_id in known else "")).strip()
-        if not claim:
-            return None
-        for h in rejected:   # never articulate a rejected claim again
-            if _norm(h.claim) == _norm(claim):
-                return HypothesisRef(source="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
-                                     match_confidence=1.0, status="rejected")
-        return HypothesisRef(source="articulated", claim=claim, entities=tuple(d.entities))
+            v = out.given or GivenVerdict(rationale="The model returned no assessment of the given hypothesis.")
+            href = (HypothesisRef(source="given", id=given_h.id, version=given_h.version, claim=given_h.claim, entities=given_h.entities,
+                                  status=given_h.status) if given_h else HypothesisRef(source="given", claim=given_claim, entities=tuple(v.entities)))
+            entries.append(_Entry(href, v.stance, v))
+        else:
+            seen = set()
+            for v in out.stored:
+                h = known.get(v.hypothesis_id)
+                if h is None or v.stance == "unrelated" or h.id in seen:
+                    continue
+                if v.stance == "supports" and v.confidence < self.settings.match_threshold:
+                    continue
+                seen.add(h.id)
+                entries.append(_Entry(HypothesisRef(source="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
+                                                    match_confidence=round(v.confidence, 3), status=h.status), v.stance, v))
+            by_claim = {_norm(h.claim): h for h in known.values()}
+            for n in out.new[: self.settings.max_trajectories]:
+                claim = (n.claim or "").strip()
+                if not claim:
+                    continue
+                h = by_claim.get(_norm(claim))
+                if h is not None:      # restated a held (or rejected) hypothesis: it is that one
+                    if h.id in seen:
+                        continue
+                    seen.add(h.id)
+                    entries.append(_Entry(HypothesisRef(source="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
+                                                        match_confidence=1.0, status=h.status), "supports", n))
+                    continue
+                if _norm(claim) in seen:
+                    continue
+                seen.add(_norm(claim))
+                entries.append(_Entry(HypothesisRef(source="articulated", claim=claim, entities=tuple(n.entities)), "supports", n))
+            entries = [e for e in entries if include_rejected or e.href.status != "rejected"]
+            if not entries:
+                return []
+        if signal is None:   # pointed at by the analyst, triage did not see a signal: the layer articulates it
+            signal = SignalOut(content=SignalContent(**self._content(out.signal)) if out.signal else SignalContent(summary=ep.text[:140]),
+                               source="articulated")
+        elif signal.source == "articulated" and out.signal is not None:
+            signal = SignalOut(content=SignalContent(**self._content(out.signal)), source="articulated")
 
-    # ---------------------------------------------------------------- one group
-    def _group(self, op: OperationalContext, ti: TrajectoryInput, risk: Risk, risk_source, signal: SignalOut, href: HypothesisRef,
-               d, run: _Run) -> AssessmentGroup:
-        ep = ti.episode
-        stored_b = op.baselines_of(href.id) if href.id else []
-        run.saw(*stored_b)
-        items = self._attached_items(op, ti, href, run)
-
-        def baselines():
-            return self.gw.call("trajectory.baselines", {
-                "risk_text": risk.text, "episode": {"text": ep.text, "source": ep.source, "occurred": ep.occurred},
-                "signal": signal.content.model_dump(), "hypothesis": href.claim,
-                "stored_baselines": [{"id": b.id, "claim": b.claim} for b in stored_b],
-                "max_new": self.settings.max_baselines if not stored_b else 1}, recorder=run.rec)
-
-        def before():   # standing before this episode: what was attached, against the stored baselines
-            if not any(i["weight"] > 0 for i in items):
-                return None
-            return self._judge(risk, href.claim, [b.claim for b in stored_b], items, None, run)
-        bl, without = _pmap(lambda f: f(), [baselines, before])
-        by_id = {b.id: b for b in stored_b}
+        # 3. targets and baselines, then one standing call for all of them
         rref = RiskRef(risk_id=risk.id, source=risk_source)
-        baselines = []
+        built = [self._target(ep, signal, rref, e, baselines_of.get(e.href.id, []) if e.href.id else []) for e in entries]
+        items = [self._attached_items(op, ti, e.href, run) for e in entries]
+        standings = self._standings(ti, risk, built, items, run)
+        return [AssessmentGroup(target=t, baselines=tuple(b), standing=st) for (t, b), st in zip(built, standings)]
+
+    # ---------------------------------------------------------------- one target
+    def _target(self, ep: Episode, signal: SignalOut, rref: RiskRef, e: "_Entry", stored_b: list[Hypothesis]):
+        v = e.verdict
+        bl = v.baselines if e.stance == "supports" else BaselinesOut()
+        by_id = {b.id: b for b in stored_b}
+        baselines, known = [], set()
         for a in bl.assessed:
             b = by_id.get(a.baseline_id)
-            if b is None:
+            if b is None or b.id in known:
                 continue
+            known.add(b.id)
+            known.add(_norm(b.claim))
             baselines.append(AssessedTrajectory(
                 episode_id=ep.id, role="baseline", signal=signal, risk=rref,
                 hypothesis=HypothesisRef(source="predefined", id=b.id, version=b.version, claim=b.claim, match_confidence=1.0, status=b.status),
                 score=round(a.fit, 3), reach=0.0, fit=round(a.fit, 3), rationale=a.rationale, ordinary_outcome=a.ordinary_outcome or b.claim))
-        known = {_norm(b.hypothesis.claim) for b in baselines}
-        for n in bl.new[: self.settings.max_baselines]:
-            if _norm(n.claim) in known:
+        for n in bl.new[: self.settings.max_baselines if not stored_b else 1]:
+            if not n.claim.strip() or _norm(n.claim) in known:
                 continue
             known.add(_norm(n.claim))
             baselines.append(AssessedTrajectory(
                 episode_id=ep.id, role="baseline", signal=signal, risk=rref, hypothesis=HypothesisRef(source="articulated", claim=n.claim),
                 score=round(n.fit, 3), reach=0.0, fit=round(n.fit, 3), rationale=n.rationale, ordinary_outcome=n.ordinary_outcome))
-
-        best_b = max((b.fit for b in baselines), default=0.0)
-        fit, reach = round(d.fit, 3), round(d.reach, 3)
-        score = score_from(reach, fit, fit - best_b, signal.content.specificity, ep.credibility)
-        if d.stance == "weakens":
-            score = 0.0           # counter-evidence carries no support; standing weighs it as evidence against
-        target = AssessedTrajectory(episode_id=ep.id, role="primary", signal=signal, hypothesis=href, risk=rref, score=score,
-                                    reach=reach, fit=fit, missing=tuple(d.missing), rationale=d.rationale, stance=d.stance)
-        return AssessmentGroup(target=target, baselines=tuple(baselines),
-                               standing=self._standing(ti, risk, target, baselines, items, without, run))
+        fit, reach = round(v.fit, 3), round(v.reach, 3)
+        if e.stance == "weakens":
+            fit, reach, score = round(min(v.fit, 0.3), 3), 0.0, 0.0   # counter-evidence carries no support; standing weighs it against
+        else:
+            best_b = max((b.fit for b in baselines), default=0.0)
+            score = score_from(reach, fit, fit - best_b, signal.content.specificity, ep.credibility)
+        target = AssessedTrajectory(episode_id=ep.id, role="primary", signal=signal, hypothesis=e.href, risk=rref, score=score,
+                                    reach=reach, fit=fit, missing=tuple(v.missing), rationale=v.rationale, stance=e.stance)
+        return target, baselines
 
     # ---------------------------------------------------------------- standing
     def _attached_items(self, op: OperationalContext, ti: TrajectoryInput, href: HypothesisRef, run: _Run) -> list[dict]:
@@ -303,34 +300,40 @@ class Core:
         return [{"id": t.id, "status": t.status, "stance": t.stance, "weight": weight_of(t.status, pw), "score": t.score, "fit": t.fit,
                  "reach": t.reach, "occurred": t.occurred, "summary": t.signal.summary, "rationale": t.rationale} for t in attached]
 
-    def _standing(self, ti: TrajectoryInput, risk: Risk, target: AssessedTrajectory, baselines, items: list[dict],
-                  without: tuple[float, str | None] | None, run: _Run) -> Standing:
-        """Standing with this episode, judged as an update of the standing before it (spec §5.3, §5.2a): a supporting
-        trajectory never lowers it, a weakening one never raises it."""
+    def _this(self, ti: TrajectoryInput, target: AssessedTrajectory) -> dict:
         analysts_own = ti.signal is not None and ti.hypothesis is not None
-        this = {"id": f"this:{ti.episode.id}", "status": "this", "stance": target.stance,
-                "weight": 1.0 if analysts_own else self.settings.proposed_weight, "score": target.score,
-                "fit": target.fit, "reach": target.reach, "occurred": ti.episode.occurred if isinstance(ti.episode.occurred, str) else None,
+        return {"id": f"this:{ti.episode.id}", "status": "this", "stance": target.stance,
+                "weight": 1.0 if analysts_own else self.settings.proposed_weight, "score": target.score, "fit": target.fit,
+                "reach": target.reach, "occurred": ti.episode.occurred if isinstance(ti.episode.occurred, str) else None,
                 "summary": target.signal.content.summary, "rationale": target.rationale}
-        before = without[0] if without else 0.0
-        value, why = self._judge(risk, target.hypothesis.claim, sorted({b.hypothesis.claim for b in baselines}), items + [this],
-                                 before if without else None, run)
-        if target.stance == "weakens":   # the judge must lower it; if it did not, damp like the noisy-OR baseline does
-            value = min(value, before) if value < before else round(before * (1 - 0.5 * this["weight"]), 3)
-        else:
-            value = max(value, before)
-        return Standing(value=value, without=before, delta=round(value - before, 3), used=uses(items + [this]), rationale=why)
 
-    def _judge(self, risk: Risk, claim: str, baselines: list[str], items: list[dict], previous: float | None,
-               run: _Run) -> tuple[float, str | None]:
+    def _standings(self, ti: TrajectoryInput, risk: Risk, built: list, items: list[list[dict]], run: _Run) -> list[Standing]:
+        """Standing of every touched hypothesis, before and after this episode (spec §5.3, §5.2a). Judged together in one
+        call; a supporting trajectory never lowers standing, a weakening one never raises it."""
+        thises = [self._this(ti, t) for t, _ in built]
         if self.settings.standing == "noisy_or":
-            return noisy_or(items), "noisy-OR of weighted scores"
-        out = self.gw.call("standing.judge", {
-            "risk_text": risk.text, "hypothesis": claim, "baselines": sorted(set(baselines)),
-            "previous_standing": previous,
-            "trajectories": [{k: i[k] for k in ("status", "stance", "weight", "score", "fit", "reach", "occurred", "summary", "rationale")} for i in items]},
-            recorder=run.rec)
-        return round(max(0.0, min(1.0, out.value)), 3), out.rationale
+            raw = [(noisy_or(it), noisy_or(it + [th]), "noisy-OR of weighted scores") for it, th in zip(items, thises)]
+        else:
+            keys = [f"h{i + 1}" for i in range(len(built))]
+            fields = ("status", "stance", "weight", "score", "fit", "reach", "occurred", "summary", "rationale")
+            out = self.gw.call("standing.judge", {"risk_text": risk.text, "hypotheses": [
+                {"key": k, "claim": t.hypothesis.claim, "baselines": sorted({b.hypothesis.claim for b in bl}),
+                 "trajectories": [{f: i[f] for f in fields} for i in it], "this": {f: th[f] for f in fields}}
+                for k, (t, bl), it, th in zip(keys, built, items, thises)]}, recorder=run.rec)
+            got = {x.key: x for x in out.standings}
+            raw = []
+            for k, it in zip(keys, items):
+                x = got.get(k)
+                before = _clip(x.before) if x is not None and any(i["weight"] > 0 for i in it) else 0.0
+                raw.append((before, _clip(x.value) if x is not None else before, x.rationale if x is not None else "no judgment returned"))
+        res = []
+        for (before, value, why), (t, _), it, th in zip(raw, built, items, thises):
+            if t.stance == "weakens":    # the judge must lower it; if it did not, damp like the noisy-OR baseline does
+                value = value if value < before else round(before * (1 - 0.5 * th["weight"]), 3)
+            else:
+                value = max(value, before)
+            res.append(Standing(value=value, without=before, delta=round(value - before, 3), used=uses(it + [th]), rationale=why))
+        return res
 
     # ================================================================ helpers
     def _radar_queries(self, mission: MissionContext, op: OperationalContext, risk: Risk, run: _Run) -> list[str]:

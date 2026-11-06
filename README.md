@@ -50,14 +50,23 @@ docs/                   the spec
 pip install -e ".[dev]"
 ```
 
+Per episode and candidate risk the layer makes three model calls (plus `radar.derive`, cached while the held
+hypotheses do not change):
+
+1. `episode.triage` (fast tier) — is the episode relevant, directly or through a held hypothesis, and which radar does
+   it answer? An irrelevant episode stops here, after one call.
+2. `episode.assess` (reasoning tier) — a verdict on every held hypothesis (supports / weakens / unrelated), new
+   hypotheses only for mechanisms the held ones miss, and the ordinary explanations (baselines) of each.
+3. `standing.judge` (reasoning tier) — every hypothesis the episode touched, judged together, before and after it.
+
 All model calls go through PydanticAI: each prompt's Pydantic schema is the output type, the model answers through an
 output tool, and a validation error is sent back to the model for up to two more attempts. Settings come from `.env`
 (copy `.env.example`), the environment, or `Settings(...)` in code.
 
 ```bash
 export MISTABRA_PROVIDER=anthropic            # anthropic | openrouter | openai (any OpenAI-compatible endpoint) | fake
-export MISTABRA_MODEL=claude-sonnet-4-5       # reasoning tier: abduction, baselines, standing
-export MISTABRA_FAST_MODEL=claude-haiku-4-5   # operational tier: radar reads, Lambda-signal check
+export MISTABRA_MODEL=claude-sonnet-4-5       # reasoning tier: assessment, standing
+export MISTABRA_FAST_MODEL=claude-haiku-4-5   # operational tier: episode triage
 export MISTABRA_API_KEY=...
 export MISTABRA_BASE_URL=...                  # openai provider: OpenRouter, Ollama, vLLM, ...
 ```

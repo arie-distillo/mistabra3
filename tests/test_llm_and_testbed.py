@@ -183,18 +183,19 @@ def test_nested_json_sent_as_strings_is_decoded():
     import json
     args = json.dumps({"relevant": True,
                        "signal": json.dumps({"actor": "weather service", "behaviour": "forecasting heavy rain", "entities": ["Northfield"]}),
-                       "trajectories": "\n" + json.dumps([{"hypothesis_id": None, "claim": "Heavy rain will overwhelm the drains.",
-                                                            "match_confidence": 0, "rationale": "r", "reach": 0.4, "fit": 0.3}]) + "\n"})
-    p = FakeProvider({"trajectory.abduce": args})
-    out = _gw(p).call("trajectory.abduce", {"x": 1})
-    assert out.signal.actor == "weather service" and out.trajectories[0].claim.startswith("Heavy rain") and len(p.calls) == 1
+                       "new": "\n" + json.dumps([{"claim": "Heavy rain will overwhelm the drains.", "rationale": "r", "reach": 0.4, "fit": 0.3,
+                                                   "baselines": json.dumps({"new": [{"claim": "seasonal rain", "fit": 0.6}]})}]) + "\n"})
+    p = FakeProvider({"episode.assess": args})
+    out = _gw(p).call("episode.assess", {"x": 1})
+    assert out.signal.actor == "weather service" and out.new[0].claim.startswith("Heavy rain") and len(p.calls) == 1
+    assert out.new[0].baselines.new[0].claim == "seasonal rain"      # decoded at every level
 
 
 def test_empty_string_for_an_object_means_not_given():
     """Qwen 3.5: an irrelevant episode answered with "signal": "" (from a real failure log)."""
-    p = FakeProvider({"trajectory.abduce": '{"relevant": false, "signal": "", "trajectories": []}'})
-    out = _gw(p).call("trajectory.abduce", {"x": 1})
-    assert out.relevant is False and out.signal is None and out.trajectories == [] and len(p.calls) == 1
+    p = FakeProvider({"episode.assess": '{"relevant": false, "signal": "", "given": "", "stored": [], "new": []}'})
+    out = _gw(p).call("episode.assess", {"x": 1})
+    assert out.relevant is False and out.signal is None and out.given is None and out.new == [] and len(p.calls) == 1
 
 
 def test_parallel_scenarios_give_identical_results():
@@ -210,7 +211,7 @@ def test_gateway_is_safe_from_many_threads():
     from concurrent.futures import ThreadPoolExecutor
     g = _gw(FakeProvider())
     with ThreadPoolExecutor(16) as ex:
-        outs = list(ex.map(lambda i: g.call("radar.read", {**V, "radar_query": f"q{i % 5}", "episode_text": "x", "source": "s"}), range(40)))
+        outs = list(ex.map(lambda i: g.call("episode.triage", {"risk_text": "r", "radars": [], "held_hypotheses": [], "episode": {"text": f"x{i % 5}", "source": "s"}}), range(40)))
     assert len(outs) == 40 and g.stats["calls"] + g.stats["cached"] == 40
 
 

@@ -128,8 +128,13 @@ def a1_score(results: list[ScenarioResult]) -> dict:
 
 
 # ---------------------------------------------------------------- A2
-def a2_lambda(results: list[ScenarioResult], established: float = 0.5, match: float = 0.2) -> dict:
-    found, est, false_alarm, flags, fails, examples = [], [], [], [], [], []
+def a2_lambda(results: list[ScenarioResult], established: float = 0.5, grade=None) -> dict:
+    """`grade(expected, claims) -> ["same" | "partial" | "different", ...]`: meaning-based in live runs (testbed.grader),
+    word overlap otherwise."""
+    from .grader import lexical
+    grade = grade or lexical()
+    found, partial, est, false_alarm, flags, fails, examples = [], [], [], [], [], [], []
+    rank = {"same": 2, "partial": 1, "different": 0}
     for res in results:
         if res.kind == "miss":
             targets = [t for t in [res.final.get("missing"), *res.final.get("alternatives", [])] if t]
@@ -140,15 +145,17 @@ def a2_lambda(results: list[ScenarioResult], established: float = 0.5, match: fl
                 if fa:
                     fails.append(f"{res.id} (control): Lambda hypothesis established: {fa[0]['claim']}")
             else:
-                best = max(lam, key=lambda h: max(jaccard(h["claim"], t) for t in targets), default=None)
-                sim = max((jaccard(best["claim"], t) for t in targets), default=0.0) if best else 0.0
-                ok = best is not None and sim >= match
+                grades = grade(targets, [h["claim"] for h in lam]) if lam else []
+                scored = sorted(zip(lam, grades), key=lambda x: (rank[x[1]], x[0]["standing"] or 0), reverse=True)
+                best, g = scored[0] if scored else (None, "different")
+                ok = g == "same"
                 found.append(ok)
+                partial.append(g in ("same", "partial"))
                 est.append(ok and (best["standing"] or 0) >= established)
                 examples.append({"case": res.id, "expected": res.final.get("missing"), "best": best["claim"] if best else None,
-                                 "similarity": round(sim, 2), "standing": best["standing"] if best else None})
+                                 "grade": g, "standing": best["standing"] if best else None})
                 if not ok:
-                    fails.append(f"{res.id}: missing hypothesis not articulated (best: {best['claim'] if best else None})")
+                    fails.append(f"{res.id}: missing hypothesis not articulated ({g}; best: {best['claim'] if best else None})")
         for s in res.steps:
             for key in ("lambda_signal", "lambda_hypothesis"):
                 if key in s.expect:
@@ -157,7 +164,7 @@ def a2_lambda(results: list[ScenarioResult], established: float = 0.5, match: fl
                     flags.append(ok)
                     if not ok:
                         fails.append(f"{res.id}:{s.label} expected {key}={s.expect[key]}, got {getattr(g, key) if g else 'no group'}")
-    return {"missing_articulated": ratio(found), "missing_established": ratio(est), "control_false_alarm": ratio(false_alarm),
+    return {"missing_articulated": ratio(found), "missing_partial": ratio(partial), "missing_established": ratio(est), "control_false_alarm": ratio(false_alarm),
             "n_cases": len(found), "n_controls": len(false_alarm), "flag_accuracy": ratio(flags), "n_flags": len(flags),
             "examples": examples, "failures": fails}
 
@@ -294,7 +301,7 @@ def e_expectations(results: list[ScenarioResult]) -> dict:
     return {"held": ratio(ok), "n": len(ok), "failures": fails}
 
 
-def all_metrics(results: list[ScenarioResult]) -> dict:
-    return {"A1_score": a1_score(results), "A2_lambda": a2_lambda(results), "A3_combination": a3_combination(results),
+def all_metrics(results: list[ScenarioResult], grade=None) -> dict:
+    return {"A1_score": a1_score(results), "A2_lambda": a2_lambda(results, grade=grade), "A3_combination": a3_combination(results),
             "A4_matching": a4_matching(results), "A5_stability": a5_stability(results), "A6_self_reinforcement": a6_self_reinforcement(results),
             "R1_ach": r1_ach(results), "E_expectations": e_expectations(results)}

@@ -1,3 +1,8 @@
+# Fixture corrections (2026-11-06), relative to the project's phase1_cases.yaml:
+# - miss_03 d7-d9 (coffee machine, breakroom fridge, chairs) were labelled cluster_member; the case's own verification
+#   note calls them the deliberately irrelevant 'coherent_but_irrelevant' decoy cluster, so they are distractors.
+# - conj_04 d6+d7 (no Paxilod in the blood at hour 2; Paxilod stays detectable for 72 hours) refute the hypothesis on
+#   their own: added as a second refuting set.
 # Phase-1 capability cases (from the Mistabra 3 project files). Fully synthetic.
 # conj_*: a stated hypothesis and data points, some of which only refute it in conjunction; *_ctrl_*: no refutation.
 # miss_*: given hypotheses and a planted cluster explained by a hypothesis nobody stated; *_ctrl_*: nothing missing.
@@ -67,12 +72,12 @@
   - {id: d3, role: distractor, text: "The clinic's double-blind dispensing log notes that all blister packs marked Batch X-9 were active drug formulations."}
   - {id: d4, role: refuting_member, text: "The pharmacy inventory audit discovered that the label printer had switched batches, meaning Batch X-9 was verified to be 100% placebo."}
   - {id: d5, role: distractor, text: "Patient 14 reported the onset of throbbing cranial pain exactly 45 minutes after ingestion."}
-  - {id: d6, role: distractor, text: "A blood draw from Patient 14 at hour 2 showed zero detectable trace levels of Paxilod or its metabolic derivatives."}
-  - {id: d7, role: distractor, text: "The clinical protocol states that Paxilod molecules bind instantly to plasma proteins and remain detectable for 72 hours."}
+  - {id: d6, role: refuting_member, text: "A blood draw from Patient 14 at hour 2 showed zero detectable trace levels of Paxilod or its metabolic derivatives."}
+  - {id: d7, role: refuting_member, text: "The clinical protocol states that Paxilod molecules bind instantly to plasma proteins and remain detectable for 72 hours."}
   - {id: d8, role: distractor, text: "Patient 14 has a documented prior medical history of chronic tension headaches and seasonal pollen allergies."}
   - {id: d9, role: distractor, text: "Nurse practitioner Davis recorded that Patient 14's vitals were entirely stable during the baseline check."}
   - {id: d10, role: distractor, text: "Concomitant medications for Patient 14 included standard daily multi-vitamins and a low-dose aspirin."}
-  ground_truth: {refuting_sets: [[d2, d4]], missing_hypothesis: null, missing_hypothesis_alternatives: [], cluster_members: []}
+  ground_truth: {refuting_sets: [[d2, d4], [d6, d7]], missing_hypothesis: null, missing_hypothesis_alternatives: [], cluster_members: []}
 - id: conj_05
   capability: conjunction_refutation
   control: false
@@ -207,9 +212,9 @@
   - {id: d4, role: cluster_member, text: "Drivers reported that their delivery handheld navigation tablets became completely unresponsive to touch inputs after booting up."}
   - {id: d5, role: cluster_member, text: "The mobile hardware technician logged 45 individual service tickets regarding frozen terminal user interfaces within a single hour."}
   - {id: d6, role: cluster_member, text: "The firmware version manifest indicates that all handheld units received the patch package 'OTA-v9.1' overnight."}
-  - {id: d7, role: cluster_member, text: "The office coffee machine vendor arrived at 08:00 AM to perform routine maintenance and descaling."}
-  - {id: d8, role: cluster_member, text: "The facility breakroom refrigerator thermostat failed, causing the internal temperature to rise to 15°C."}
-  - {id: d9, role: cluster_member, text: "Three breakroom chairs were moved to the main hallway during the floor waxing routine."}
+  - {id: d7, role: distractor, text: "The office coffee machine vendor arrived at 08:00 AM to perform routine maintenance and descaling."}
+  - {id: d8, role: distractor, text: "The facility breakroom refrigerator thermostat failed, causing the internal temperature to rise to 15°C."}
+  - {id: d9, role: distractor, text: "Three breakroom chairs were moved to the main hallway during the floor waxing routine."}
   - {id: d10, role: distractor, text: "The delivery trucks were washed and detailed by an external contractor over the weekend."}
   - {id: d11, role: distractor, text: "Driver Smith renewed his commercial driver's license certification card two days prior to the incident."}
   ground_truth:
