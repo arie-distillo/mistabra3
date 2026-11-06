@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from mistabra_core.llm.base import LLMOutputError
 from mistabra_core import Core
 from mistabra_core.types import (Assessment, Hypothesis, HypothesisRef, OperationalContext, StoredTrajectory, TrajectoryInput)
 
@@ -136,6 +137,7 @@ class StepRec:
     calls: int
     cached: int
     seconds: float
+    error: str | None = None          # the layer failed on this episode; the scenario goes on without it
 
 
 @dataclass
@@ -160,8 +162,15 @@ def run_scenario(core: Core, sc: Scenario, log=print) -> ScenarioResult:
         runs = [step.model_copy(update={"hypothesis": hid}) for hid in initial] if sc.per_hypothesis else [step]
         for st in runs:
             ts = time.perf_counter()
-            a = core.assess(sc.mission, layer.op, TrajectoryInput(episode=st.episode, signal=st.signal, hypothesis=st.hypothesis, risk=st.risk),
-                            scope=st.scope)
+            try:
+                a = core.assess(sc.mission, layer.op, TrajectoryInput(episode=st.episode, signal=st.signal, hypothesis=st.hypothesis, risk=st.risk),
+                                scope=st.scope)
+            except LLMOutputError as e:   # one unusable model answer costs this episode, not the whole scenario
+                log(f"  [{sc.id}] {st.label}: {e}")
+                res.steps.append(StepRec(label=st.label, episode_id=st.episode.id, pattern=0, given_hypothesis=None, groups=[],
+                                         expect=st.expect, calls=0, cached=0, seconds=round(time.perf_counter() - ts, 2),
+                                         error=f"{type(e).__name__}: {e}"))
+                continue
             ids = layer.keep(a, st)
             created.setdefault(st.label, []).extend(ids)
             groups = []

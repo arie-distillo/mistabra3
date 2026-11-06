@@ -92,7 +92,8 @@ def markdown(reports: list[dict]) -> str:
         s = r["settings"]
         out.append(f"- **{s['standing']}** standing: provider `{s['provider']}`, model `{s['model']}`, fast `{s['fast_model']}`; "
                    f"{r['llm']['calls']} model calls, {r['llm']['cached']} cached, {r['llm'].get('retries', 0)} validation retries, "
-                   f"{r['llm']['errors']} errors, {r['seconds']} s")
+                   f"{r['llm']['errors']} errors, "
+                   f"{sum(1 for x in r['scenarios'] for st in x['steps'] if st.get('error'))} episodes skipped, {r['seconds']} s")
     if reports and reports[0]["settings"]["provider"] == "fake":
         out += ["", "> Fake provider: these numbers prove the plumbing, not the method. Run with `--live` for measurements."]
     out += ["", "| Metric | " + " | ".join(r["settings"]["standing"] for r in reports) + " |", "| --- |" + " --- |" * len(reports)]
@@ -108,6 +109,9 @@ def markdown(reports: list[dict]) -> str:
     for sec, v in m.items():
         for f in v.get("failures", [])[:25]:
             out.append(f"- {sec}: {f}")
+    step_errs = [f"{x['id']}:{st['label']}: {st['error']}" for x in reports[0]["scenarios"] for st in x["steps"] if st.get("error")]
+    if step_errs:
+        out += ["", f"## Episodes skipped after a failed model call ({len(step_errs)})", ""] + [f"- {e}" for e in step_errs]
     errs = [x for x in reports[0]["scenarios"] if x["error"]]
     if errs:
         out += ["", "## Scenario errors", ""] + [f"- {x['id']}: {x['error']}" for x in errs]

@@ -14,7 +14,7 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 from pydantic_ai.models import Model  # noqa: E402
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
-OUTPUT_RETRIES = 2          # validation failures sent back to the model before the call fails
+OUTPUT_RETRIES = 3          # validation failures sent back to the model before the call fails
 
 
 class LLMError(RuntimeError): ...

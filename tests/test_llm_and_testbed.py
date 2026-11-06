@@ -249,3 +249,20 @@ def test_standing_is_a_chain_of_updates_across_steps():
                 last[g.hypothesis_id] = g.standing
         assert all(res.hypotheses[h]["standing"] == v for h, v in last.items())
     assert checked
+
+
+def test_a_failed_episode_is_skipped_not_the_scenario():
+    from testbed.harness import run_scenario
+    from testbed.scenario import discover
+    from mistabra_core import Core
+    sc = next(s for s in discover() if s.id == "miss_01")
+    target = sc.steps[3].episode.text
+    def assess(d):
+        if d["episode"]["text"] == target:
+            return "not json at all"
+        return FakeProvider()._episode_assess(d)
+    triage = {"relevant": True, "confidence": 0.9, "content": {"summary": "s"}}
+    res = run_scenario(Core(Settings(force_fake=True), provider=FakeProvider({"episode.assess": assess, "episode.triage": triage})), sc,
+                       log=lambda *_: None)
+    assert len(res.steps) == len(sc.steps) and res.error is None
+    assert [s.label for s in res.steps if s.error] == [sc.steps[3].label]
