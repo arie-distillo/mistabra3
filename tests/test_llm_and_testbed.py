@@ -212,3 +212,19 @@ def test_gateway_is_safe_from_many_threads():
     with ThreadPoolExecutor(16) as ex:
         outs = list(ex.map(lambda i: g.call("radar.read", {**V, "radar_query": f"q{i % 5}", "episode_text": "x", "source": "s"}), range(40)))
     assert len(outs) == 40 and g.stats["calls"] + g.stats["cached"] == 40
+
+
+def test_call_log_records_every_call_with_its_episode(tmp_path):
+    from mistabra_core import Core
+    from tests.conftest import ep
+    import json as _j
+    from mistabra_core import TrajectoryInput
+    from testbed.scenario import discover
+    sc = next(s for s in discover() if s.id == "flood_conjunction")
+    log = tmp_path / "calls.jsonl"
+    core = Core(Settings(force_fake=True, call_log=log), provider=FakeProvider())
+    core.assess(sc.mission, sc.operational, TrajectoryInput(episode=sc.steps[0].episode, risk="flood"))
+    core.assess(sc.mission, sc.operational, TrajectoryInput(episode=sc.steps[0].episode, risk="flood"))
+    rows = [_j.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
+    assert rows and all(r["episode"] == sc.steps[0].episode.id and r["output"] is not None for r in rows)
+    assert any(r["cached"] for r in rows) and any(not r["cached"] for r in rows)

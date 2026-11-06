@@ -68,6 +68,7 @@ class Settings:
     max_tokens: int = 4000                  # per call; thinking models count their reasoning against it
     reasoning: str | None = None            # None = model default | none | low | medium | high (openai / openrouter)
     failure_log: Path | None = None         # append failed model calls (prompt, raw output, error) as JSON lines
+    call_log: Path | None = None            # append every model call (prompt, validated output; cached ones too) as JSON lines
     concurrency: int = 8                    # model requests in flight at once (independent calls run in parallel)
 
     standing: str = "judged"                # judged (reasoning model weighs the attached trajectories) | noisy_or (baseline)

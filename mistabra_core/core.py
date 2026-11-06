@@ -75,6 +75,7 @@ class Core:
         if detail not in ("full", "scores"):
             raise ValueError("detail must be 'full' or 'scores'")
         run = _Run()
+        run.rec.label = trajectory.episode.id
         groups = self._groups(mission, operational, trajectory, run, primary=True)
         if scope == "open" and (trajectory.hypothesis is not None or trajectory.risk is not None):
             stripped = TrajectoryInput(episode=trajectory.episode, signal=trajectory.signal)

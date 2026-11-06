@@ -139,17 +139,22 @@ def main(argv=None) -> int:
             return 2
     over = {"cache_path": Path(a.cache)} if a.cache else {}
     over["failure_log"] = Path(a.out) / "failures.jsonl"   # every failed model call, with prompt and raw output
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    calls = Path(a.out) / f"{stamp}-calls.jsonl"
+    if a.live:
+        over["call_log"] = calls                           # every model call, with prompt and output: the "why" behind the report
     modes = ["judged", "noisy_or"] if a.compare else [a.standing or os.environ.get("MISTABRA_STANDING", "judged")]
     reports = [run({**over, "standing": m}, a.only, jobs=a.jobs) for m in modes]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
     tag = f"{stamp}-{reports[0]['settings']['provider']}-{'compare' if a.compare else modes[0]}"
     (out / f"{tag}.json").write_text(json.dumps(reports, indent=1, default=str), encoding="utf-8")
     md = markdown(reports)
     (out / f"{tag}.md").write_text(md, encoding="utf-8")
     print("\n" + md)
     print(f"report: {out / tag}.json, .md")
+    if calls.exists():
+        print(f"model calls (prompt and output of each): {calls}")
     if (out / "failures.jsonl").exists():
         print(f"failed model calls (prompt, raw output, error): {out / 'failures.jsonl'}")
     return 0
