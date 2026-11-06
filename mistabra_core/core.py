@@ -191,9 +191,12 @@ class Core:
         run.saw(*precedents)
         baselines_of = {h.id: op.baselines_of(h.id) for h in [*held, *([given_h] if given_h else [])]}
         run.saw(*(b for bs in baselines_of.values() for b in bs))
+        def evidence(hid):   # what is already on file for a hypothesis, neutral facts included: they can combine with this episode
+            return [f"({t.stance}) {t.signal.summary}" for t in op.attached(hid)
+                    if t.status != "rejected" and t.episode_id != ep.id][-self.settings.max_evidence:]
+
         def held_view(h):
-            ev = [t.signal.summary for t in op.attached(h.id) if t.status != "rejected" and t.episode_id != ep.id][-3:]
-            return {"id": h.id, "claim": h.claim, "status": h.status, "refines": h.refines, "evidence": ev,
+            return {"id": h.id, "claim": h.claim, "status": h.status, "refines": h.refines, "evidence": evidence(h.id),
                     "baselines": [{"id": b.id, "claim": b.claim} for b in baselines_of.get(h.id, [])]}
         out = self.gw.call("episode.assess", {
             "risk_text": risk.text, "context": ctx, "pointed": pointed,
@@ -201,7 +204,8 @@ class Core:
             "signal": None if ti.signal is None else ({**ti.signal.content.model_dump(), "note": ti.signal.note} if ti.signal.content else {"note": ti.signal.note}),
             "detected_signal": None if signal is None or signal.source == "given" else signal.content.model_dump(),
             "given_hypothesis": None if given_claim is None else {
-                "claim": given_claim, "baselines": [{"id": b.id, "claim": b.claim} for b in baselines_of.get(given_h.id if given_h else "", [])]},
+                "claim": given_claim, "evidence": evidence(given_h.id) if given_h else [],
+                "baselines": [{"id": b.id, "claim": b.claim} for b in baselines_of.get(given_h.id if given_h else "", [])]},
             "held_hypotheses": [] if given_claim else [held_view(h) for h in held],
             "precedents": [{"claim": known[t.hypothesis_id].claim if t.hypothesis_id in known else "", "rationale": t.rationale,
                             "fit": t.fit, "reach": t.reach} for t in precedents],
@@ -303,7 +307,7 @@ class Core:
     def _attached_items(self, op: OperationalContext, ti: TrajectoryInput, href: HypothesisRef, run: _Run) -> list[dict]:
         pw = self.settings.proposed_weight
         attached = op.attached(href.id)[-self.settings.max_attached:] if href.id else []
-        attached = [t for t in attached if t.episode_id != ti.episode.id and t.stance != "neutral"]   # re-assessing replaces its own; neutral bears on nothing
+        attached = [t for t in attached if t.episode_id != ti.episode.id]   # re-assessing an episode replaces its own trajectory
         run.saw(*attached)
         return [{"id": t.id, "status": t.status, "stance": t.stance, "weight": weight_of(t.status, pw), "score": t.score, "fit": t.fit,
                  "reach": t.reach, "occurred": t.occurred, "summary": t.signal.summary, "rationale": t.rationale} for t in attached]

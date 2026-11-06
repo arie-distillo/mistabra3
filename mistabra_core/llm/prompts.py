@@ -200,7 +200,7 @@ PROMPTS: dict[str, Prompt] = {
         "- If relevant, content: what in the episode connects it to the risk. " + CONTENT + " why: one sentence.\n"
         "Schema: {\"relevant\":bool,\"confidence\":0-1,\"radar\":int|null,\"touches\":[str],\"why\":str,\"content\":{...}|null}",
         TriageOut, "fast"),
-    "episode.assess": Prompt("episode.assess", "4", ANALYST,
+    "episode.assess": Prompt("episode.assess", "5", ANALYST,
         "Assess the episode against the risk and the hypotheses held about it (episode -> signal -> hypothesis -> risk).\n"
         "- signal: if both INPUT signal and detected_signal are null, articulate what in the episode connects it to the risk (or to the "
         "given hypothesis) as signal content; otherwise return null. " + CONTENT + "\n"
@@ -210,7 +210,10 @@ PROMPTS: dict[str, Prompt] = {
         "hypothesis more nor less likely, including routine details merely consistent with normal operation (a manifest signed, the "
         "kind of cargo, a log-in). \"weakens\" needs a reason the hypothesis becomes less likely: the episode contradicts its "
         "mechanism, removes a condition it depends on, or shows a competing cause actually at work. A competing cause that is "
-        "merely possible is not a reason.\n"
+        "merely possible is not a reason. Decide the stance with the hypothesis's `evidence` in view: facts already on file, each "
+        "marked with the stance it got alone, (neutral) ones included. A fact that is neutral alone can complete a conjunction with "
+        "this episode (a recorded payload plus a stated limit shows an overload; a vehicle's range plus a distance rules a route "
+        "out): then the stance follows from the conjunction.\n"
         "- Otherwise:\n"
         "  - stored: one verdict for EVERY held hypothesis (rejected ones included): stance \"supports\" (the episode makes it more "
         "likely), \"weakens\" (less likely, or it removes the condition the hypothesis depends on), or \"unrelated\"; confidence 0-1 "
@@ -254,7 +257,7 @@ PROMPTS: dict[str, Prompt] = {
         "\"new\":[{\"claim\":str,\"entities\":[str],\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"baselines\":B}]} where "
         "B = {\"assessed\":[{\"baseline_id\":str,\"fit\":0-1,\"ordinary_outcome\":str,\"rationale\":str}],"
         "\"new\":[{\"claim\":str,\"ordinary_outcome\":str,\"rationale\":str,\"fit\":0-1}]}", AssessOut, "reasoning"),
-    "standing.judge": Prompt("standing.judge", "8", ANALYST,
+    "standing.judge": Prompt("standing.judge", "9", ANALYST,
         "For each hypothesis listed, judge its standing: how well it is supported, against its ordinary explanations (baselines), by "
         "ALL the trajectories attached to it, taken together. Give two values: `before`, from its `trajectories` alone, and `value`, "
         "with `this` (the new episode's trajectory) added. Each trajectory has a status and a weight: confirmed by the analyst "
@@ -262,7 +265,9 @@ PROMPTS: dict[str, Prompt] = {
         "ignore it as support). Combine them as an analyst would: several individually weak trajectories that point the same way can "
         "make the hypothesis likely; two that report the same fact count once; a trajectory whose best explanation is ordinary adds "
         "little; a trajectory with stance \"weakens\" is counter-evidence and lowers the hypothesis in proportion to its weight; "
-        "evidence that rules out the hypothesis's mechanism lowers it even if each item alone looks neutral. " + _SCALE + " "
+        "evidence that rules out the hypothesis's mechanism lowers it even if each item alone looks neutral. A trajectory with stance "
+        "\"neutral\" bore on nothing on its own; it adds nothing by itself, but read it together with the others: facts that are "
+        "neutral alone can jointly support or rule out the hypothesis (a recorded weight and a stated limit). " + _SCALE + " "
         "With no trajectories, before is 0. When a hypothesis comes with `before` already set (the standing last reported for it), "
         "return that value as before and judge value as the change from it.  A supporting `this` keeps or raises the value; a `this` with stance \"weakens\" must lower "
         "it below before, in proportion to what it shows: evidence that rules out the mechanism, or removes the very condition the "

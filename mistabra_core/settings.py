@@ -69,9 +69,12 @@ class Settings:
     reasoning: str | None = None            # None = model default | none | low | medium | high (openai / openrouter)
     failure_log: Path | None = None         # append failed model calls (prompt, raw output, error) as JSON lines
     call_log: Path | None = None            # append every model call (prompt, validated output; cached ones too) as JSON lines
+    temperature: float = 0.0                # sampling temperature for every call
+    cache_salt: str = ""                    # part of the cache key: a different salt gives a fresh, independently cached run
     concurrency: int = 8                    # model requests in flight at once (independent calls run in parallel)
 
     standing: str = "judged"                # judged (reasoning model weighs the attached trajectories) | noisy_or (baseline)
+    max_evidence: int = 6                   # facts already attached to a hypothesis shown when assessing a new episode
     unconfirmed_cap: float = 0.8            # standing ceiling while nothing attached is confirmed by the analyst
     proposed_weight: float = 0.5            # weight of a `proposed` trajectory in standing; confirmed = 1, rejected = 0
     relevance_threshold: float = 0.5        # triage confidence needed to proceed
@@ -99,6 +102,7 @@ class Settings:
             reasoning=e.get("MISTABRA_REASONING") or None,
             failure_log=Path(e["MISTABRA_FAILURE_LOG"]) if e.get("MISTABRA_FAILURE_LOG") else None,
             concurrency=int(e.get("MISTABRA_CONCURRENCY") or 8),
+            temperature=float(e.get("MISTABRA_TEMPERATURE") or 0.0),
         )
         for k, v in overrides.items():
             setattr(s, k, v)

@@ -290,3 +290,17 @@ def test_given_hypothesis_episode_does_not_bear_on_is_neutral(mission, op, strat
     g = make_core(over, standing=strategy).assess(mission, ctx, TrajectoryInput(episode=ep("The council repainted the bus shelter on Main Road.", eid="new"), hypothesis="H_elm")).groups[0]
     assert g.target.stance == "neutral" and g.target.score == 0.0 and g.baselines == ()
     assert g.standing.value == g.standing.without and g.standing.delta == 0.0
+
+
+def test_neutral_facts_stay_in_view_for_conjunctions(mission, op):
+    """A fact neutral alone (a recorded payload) must reach both the assessment and the standing judgment of a later
+    episode (the stated limit) that completes the conjunction."""
+    from mistabra_core.types import SignalContent
+    payload = traj("n1", "H_elm", 0.0).model_copy(update={"stance": "neutral", "signal": SignalContent(summary="payload was 620 kg")})
+    ctx = op.model_copy(update={"trajectories": (payload,)})
+    seen = {}
+    over = {"episode.assess": lambda d: (seen.setdefault("assess", d), {"given": {"stance": "supports", "fit": 0.3, "reach": 0.3}})[1],
+            "standing.judge": lambda d: (seen.setdefault("judge", d), _judge(lambda h: (0.0, 0.5))(d))[1]}
+    make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep("The rated capacity is 500 kg.", eid="new"), hypothesis="H_elm"))
+    assert seen["assess"]["given_hypothesis"]["evidence"] == ["(neutral) payload was 620 kg"]
+    assert [t["stance"] for t in seen["judge"]["hypotheses"][0]["trajectories"]] == ["neutral"]

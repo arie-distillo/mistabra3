@@ -5,6 +5,7 @@
     python -m testbed.run --live --compare        # judged standing (the frame) vs noisy-OR standing (baseline), same inputs
     python -m testbed.run --only miss_ --only conj_01
     python -m testbed.run --live --cache .cache/mistabra.sqlite   # re-runs reuse model outputs
+    python -m testbed.run --live --repeat 3       # three independent runs (run 1 may reuse the cache), mean / min / max per metric
     python -m testbed.run --live --jobs 8         # scenarios in parallel (default 4); steps within a scenario stay in order
 
 Writes a JSON report and a Markdown summary to testbed/reports/ (or --out). Reported, never gated.
@@ -113,6 +114,21 @@ def markdown(reports: list[dict]) -> str:
     return "\n".join(out) + "\n"
 
 
+def spread(runs: list[list[dict]]) -> str:
+    """Run-to-run spread of the headline metrics: mean, min, max and every value, per standing mode."""
+    out = [f"# Run-to-run spread ({len(runs)} runs)", ""]
+    modes = [r["settings"]["standing"] for r in runs[0]]
+    out += ["| Metric | " + " | ".join(f"{m}: mean [min, max] (values)" for m in modes) + " |", "| --- |" + " --- |" * len(modes)]
+    for sec, key, label in HEADLINE:
+        cells = []
+        for j in range(len(modes)):
+            vals = [r[j]["metrics"][sec].get(key) for r in runs]
+            nums = [v for v in vals if isinstance(v, (int, float))]
+            cells.append(f"{sum(nums) / len(nums):.3f} [{min(nums)}, {max(nums)}] ({', '.join(str(v) for v in vals)})" if nums else "None")
+        out.append(f"| {sec.split('_')[0]} {label} | " + " | ".join(cells) + " |")
+    return "\n".join(out) + "\n\nThe report below is run 1.\n"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m testbed.run")
     ap.add_argument("--live", action="store_true", help="use the provider configured in MISTABRA_* env (default: fake, offline)")
@@ -121,6 +137,8 @@ def main(argv=None) -> int:
     ap.add_argument("--only", action="append", default=[], help="run scenarios whose id contains this text (repeatable)")
     ap.add_argument("--cache", help="SQLite file caching model outputs across runs")
     ap.add_argument("--jobs", type=int, default=4, help="scenarios run in parallel (default 4)")
+    ap.add_argument("--repeat", type=int, default=1, help="independent runs (fresh cache entries after the first): run-to-run spread")
+    ap.add_argument("--temperature", type=float, default=None, help="sampling temperature (default MISTABRA_TEMPERATURE or 0)")
     ap.add_argument("--out", default=str(HERE / "reports"))
     a = ap.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):   # Windows consoles default to cp1252; never crash on a character
@@ -146,13 +164,21 @@ def main(argv=None) -> int:
     calls = Path(a.out) / f"{stamp}-calls.jsonl"
     if a.live:
         over["call_log"] = calls                           # every model call, with prompt and output: the "why" behind the report
+    if a.temperature is not None:
+        over["temperature"] = a.temperature
     modes = ["judged", "noisy_or"] if a.compare else [a.standing or os.environ.get("MISTABRA_STANDING", "judged")]
-    reports = [run({**over, "standing": m}, a.only, jobs=a.jobs) for m in modes]
+    runs = []
+    for i in range(max(1, a.repeat)):
+        if a.repeat > 1:
+            print(f"=== repeat {i + 1}/{a.repeat}")
+        salt = {"cache_salt": f"repeat{i}"} if i else {}
+        runs.append([run({**over, **salt, "standing": m}, a.only, jobs=a.jobs) for m in modes])
+    reports = runs[0]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    tag = f"{stamp}-{reports[0]['settings']['provider']}-{'compare' if a.compare else modes[0]}"
-    (out / f"{tag}.json").write_text(json.dumps(reports, indent=1, default=str), encoding="utf-8")
-    md = markdown(reports)
+    tag = f"{stamp}-{reports[0]['settings']['provider']}-{'compare' if a.compare else modes[0]}{f'-x{a.repeat}' if a.repeat > 1 else ''}"
+    (out / f"{tag}.json").write_text(json.dumps(runs if a.repeat > 1 else reports, indent=1, default=str), encoding="utf-8")
+    md = markdown(reports) if a.repeat == 1 else spread(runs) + "\n" + markdown(reports)
     (out / f"{tag}.md").write_text(md, encoding="utf-8")
     print("\n" + md)
     print(f"report: {out / tag}.json, .md")

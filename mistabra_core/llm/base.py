@@ -41,7 +41,7 @@ class Backend:
         return self._models[name]
 
     def model_settings(self) -> dict:
-        s = {"temperature": 0.0, "max_tokens": self.settings.max_tokens, "timeout": self.settings.timeout_s}
+        s = {"temperature": self.settings.temperature, "max_tokens": self.settings.max_tokens, "timeout": self.settings.timeout_s}
         r = self.settings.reasoning
         if r and self.settings.provider == "openrouter":
             s["extra_body"] = {"reasoning": {"enabled": False} if r == "none" else {"effort": r}}

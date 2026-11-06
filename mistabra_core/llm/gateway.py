@@ -122,7 +122,10 @@ class Gateway:
         p = prompt or PROMPTS[task]
         _, user = p.render(variables)
         model = self.model_for(p.tier)
-        key = hashlib.sha256(f"{p.id}|{p.version}|{self.backend.name}|{model}|{user}".encode()).hexdigest()
+        salt = getattr(self.settings, "cache_salt", "") or ""
+        temp = getattr(self.settings, "temperature", 0.0) or 0.0
+        key = hashlib.sha256(f"{p.id}|{p.version}|{self.backend.name}|{model}|{user}"
+                             f"{'|' + salt if salt else ''}{f'|t{temp}' if temp else ''}".encode()).hexdigest()
         t0 = time.perf_counter()
         hit = self.cache.get(key)
         if hit is not None:
