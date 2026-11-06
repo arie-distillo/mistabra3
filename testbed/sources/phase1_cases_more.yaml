@@ -1,0 +1,407 @@
+# More phase-1 missing-hypothesis cases (2026-11-06), same format as phase1_cases.yaml.
+#
+# Why: with 4 cases, A2 moves in 25-point steps and three runs gave 4/4, 2/4, 3/4 — no prompt change could be shown
+# to help. These add 12 cases with a missing hypothesis and 4 controls across 12 domains.
+#
+# Design rules, checked case by case:
+# - Two given hypotheses (the analyst's), each contradicted by one distractor: the layer should mark those "weakens".
+# - Four cluster members point to one missing mechanism. Each is weak or ambiguous alone; together they leave little
+#   else. None states the mechanism outright.
+# - The rest are distractors: routine facts, plus in miss_14 and miss_16 a decoy that is tempting (same wards; an
+#   early-starting bakery on the same street).
+# - Cluster members are interleaved with distractors, not grouped.
+# - Controls: the evidence is fully explained by the given hypotheses; proposing a new one is a false alarm.
+
+- id: miss_05
+  capability: missing_hypothesis
+  control: false
+  domain: food_safety
+  given_hypotheses:
+  - Diners were infected with Salmonella from contaminated raw chicken supplied by the restaurant's poultry supplier.
+  - Diners were infected because kitchen staff did not wash their hands properly.
+  data_points:
+  - {id: d1, role: distractor, text: "All chicken lots delivered that week passed the supplier's independent Salmonella testing, and the leftover chicken in the fridge tested negative."}
+  - {id: d2, role: distractor, text: "A health inspector's unannounced visit the same week rated the kitchen's handwashing compliance at 96%."}
+  - {id: d3, role: cluster_member, text: "A plumber's work order from three weeks earlier notes that the filter housing on the kitchen's cold-water line was removed 'temporarily' to fix a leak."}
+  - {id: d4, role: distractor, text: "The restaurant switched to a new napkin supplier at the start of the month."}
+  - {id: d5, role: cluster_member, text: "Of the 23 ill diners, 19 ordered iced drinks or the oyster platter, which is served on a bed of crushed ice."}
+  - {id: d6, role: distractor, text: "Two waiters called in sick the same week with colds."}
+  - {id: d7, role: cluster_member, text: "Diners who ordered only hot dishes with bottled water reported no illness."}
+  - {id: d8, role: distractor, text: "Reservations rose 30% after a newspaper review."}
+  - {id: d9, role: cluster_member, text: "A swab of the ice machine's storage bin found coliform counts above the reporting limit."}
+  - {id: d10, role: distractor, text: "The dishwasher's rinse temperature log shows 82°C throughout the week."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: Diners were sickened by contaminated ice from the ice machine after the water filter on its supply line was removed during plumbing work.
+    missing_hypothesis_alternatives:
+    - The outbreak came from the ice, not the food, because the cold-water filter feeding the ice machine had been taken out.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_06
+  capability: missing_hypothesis
+  control: false
+  domain: supply_chain
+  given_hypotheses:
+  - Motor controller shortages are caused by congestion at the Antwerp container terminal.
+  - Motor controller shortages are caused by the supplier's factory running short of production capacity.
+  data_points:
+  - {id: d1, role: distractor, text: "Antwerp terminal reports average container dwell time for general cargo at a two-year low in September."}
+  - {id: d2, role: distractor, text: "The supplier says its factory is running at 70% of capacity and finished motor controllers are waiting in its warehouse."}
+  - {id: d3, role: cluster_member, text: "Since 1 September, the customs broker's entries for the motor controllers use tariff code 8504.40 instead of 8537.10."}
+  - {id: d4, role: distractor, text: "Fuel surcharges on the ocean leg rose 4% in the third quarter."}
+  - {id: d5, role: cluster_member, text: "Customs holds on the company's containers at Antwerp rose from 2% to 31% in September."}
+  - {id: d6, role: distractor, text: "The procurement team moved to a new office floor."}
+  - {id: d7, role: cluster_member, text: "Containers from the same supplier carrying only cable harnesses cleared without holds."}
+  - {id: d8, role: distractor, text: "A competitor announced a new motor controller product line."}
+  - {id: d9, role: cluster_member, text: "An EU notice published in August put goods under tariff code 8504.40 from the origin country under enhanced anti-dumping checks."}
+  - {id: d10, role: distractor, text: "Warehouse cycle-count accuracy was 99.2% in September."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: The controllers are held at customs because the broker switched them to a tariff code that falls under enhanced anti-dumping checks.
+    missing_hypothesis_alternatives:
+    - A change of customs classification by the broker exposed the shipments to anti-dumping inspections, delaying them.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_07
+  capability: missing_hypothesis
+  control: false
+  domain: cyber_security
+  given_hypotheses:
+  - Staff accounts were taken over through credentials stolen in a phishing campaign.
+  - Staff accounts were taken over by brute-forcing passwords on the VPN.
+  data_points:
+  - {id: d1, role: distractor, text: "Email gateway logs show no messages with credential-harvesting links reaching staff in the month before the takeovers."}
+  - {id: d2, role: distractor, text: "VPN logs show no bursts of failed logins, and multi-factor authentication was enforced on all accounts."}
+  - {id: d3, role: cluster_member, text: "On 2 October, the 'PDF Tools' browser extension installed on 340 staff browsers updated itself to version 5.2."}
+  - {id: d4, role: distractor, text: "IT renewed the antivirus licence for another three years."}
+  - {id: d5, role: distractor, text: "The office Wi-Fi password was changed in September, as the policy requires every quarter."}
+  - {id: d6, role: cluster_member, text: "Version 5.2 of the extension asks for permission to 'read and change all your data on all websites'; version 5.1 did not."}
+  - {id: d7, role: distractor, text: "Marketing launched a redesigned public website."}
+  - {id: d8, role: cluster_member, text: "The affected accounts' session tokens were used from a hosting provider's IP range, with no new login events recorded."}
+  - {id: d9, role: distractor, text: "A staff survey complained about slow laptops."}
+  - {id: d10, role: cluster_member, text: "All 14 affected accounts belong to staff who have PDF Tools installed; none of the 60 staff on locked-down kiosk machines were affected."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: Attackers hijacked staff sessions by stealing session tokens through a malicious update of a browser extension.
+    missing_hypothesis_alternatives:
+    - A compromised update of the PDF Tools extension stole browser session cookies, letting attackers use accounts without logging in.
+    cluster_members: [d3, d6, d8, d10]
+
+- id: miss_08
+  capability: missing_hypothesis
+  control: false
+  domain: drug_safety
+  given_hypotheses:
+  - The drug causes liver injury directly in a small share of patients.
+  - The liver injury is caused by the patients' alcohol consumption.
+  data_points:
+  - {id: d1, role: distractor, text: "Across all post-marketing patients, the rate of liver enzyme elevation is no higher than in matched untreated patients."}
+  - {id: d2, role: distractor, text: "Questionnaires show the affected patients drink no more alcohol than unaffected patients on the drug."}
+  - {id: d3, role: cluster_member, text: "Of the 11 patients with liver enzyme elevation, 9 were also being treated for a fungal infection with fluconazole."}
+  - {id: d4, role: distractor, text: "The tablet coating changed colour from white to pale blue in the spring."}
+  - {id: d5, role: cluster_member, text: "The drug's label states that it is cleared mainly by the liver enzyme CYP3A4."}
+  - {id: d6, role: distractor, text: "A competing drug in the same class was approved last month."}
+  - {id: d7, role: cluster_member, text: "Blood levels of the drug in two of the affected patients were four times the expected trough level."}
+  - {id: d8, role: distractor, text: "The company's safety database moved to a new vendor."}
+  - {id: d9, role: cluster_member, text: "The 2,300 patients in the original trials were not allowed to take azole antifungals during the study."}
+  - {id: d10, role: distractor, text: "Prescriptions doubled after a treatment guideline update."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: The liver injury results from a drug interaction in which co-prescribed azole antifungals inhibit CYP3A4 and raise the drug's blood levels.
+    missing_hypothesis_alternatives:
+    - Fluconazole taken alongside the drug blocks its breakdown, and the resulting high drug levels injure the liver.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_09
+  capability: missing_hypothesis
+  control: false
+  domain: market_integrity
+  given_hypotheses:
+  - A board member leaked news of the merger to the traders.
+  - The option purchases before the merger announcement were ordinary momentum trading.
+  data_points:
+  - {id: d1, role: distractor, text: "Phone and email records of all board members show no contact with the owners of the trading accounts."}
+  - {id: d2, role: distractor, text: "The purchases were short-dated, out-of-the-money call options expiring in the week of the announcement, unlike the stock's usual options activity."}
+  - {id: d3, role: cluster_member, text: "The merger press release was translated into four languages by an outside agency two days before the announcement."}
+  - {id: d4, role: distractor, text: "The company's annual report won a design award."}
+  - {id: d5, role: cluster_member, text: "Three of the accounts that bought the call options list the same employer on their brokerage forms, a document translation firm."}
+  - {id: d6, role: distractor, text: "The CFO bought shares six months earlier under a trading plan filed in advance."}
+  - {id: d7, role: cluster_member, text: "The option purchases were made on the evening of the day the translations were delivered."}
+  - {id: d8, role: distractor, text: "Index funds rebalanced the sector that month."}
+  - {id: d9, role: cluster_member, text: "The translation agency's confidentiality agreement with the company covers the agency itself, not its freelance translators."}
+  - {id: d10, role: distractor, text: "The stock exchange had a 20-minute outage two weeks before the announcement."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: People working for the outside translation agency that handled the merger press release traded on the advance information.
+    missing_hypothesis_alternatives:
+    - The leak came from the translation agency, whose translators bought call options after receiving the press release.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_10
+  capability: missing_hypothesis
+  control: false
+  domain: corporate_acquisition
+  given_hypotheses:
+  - The target's falling revenue after the deal reflects a shrinking end market.
+  - The target's falling revenue after the deal reflects the loss of its top sales director.
+  data_points:
+  - {id: d1, role: distractor, text: "A market research firm reports that end-customer demand in the target's segment grew 6% last year."}
+  - {id: d2, role: distractor, text: "The departed sales director's accounts were reassigned, and bookings from them held steady."}
+  - {id: d3, role: cluster_member, text: "In the four quarters before the deal, 38% of the target's revenue was booked in the last ten days of each quarter, up from 15% two years earlier."}
+  - {id: d4, role: distractor, text: "The target moved its headquarters to a new business park."}
+  - {id: d5, role: cluster_member, text: "Distributors hold seven months of the target's products in stock; the industry norm is two."}
+  - {id: d6, role: distractor, text: "The target upgraded its ERP system in the middle of the year."}
+  - {id: d7, role: cluster_member, text: "A folder found after closing contains letters to three distributors granting extended payment terms and the right to return unsold stock."}
+  - {id: d8, role: distractor, text: "Two of the target's board members share a surname but are not related."}
+  - {id: d9, role: cluster_member, text: "Product returns in the first month of each quarter rose fourfold over the same period."}
+  - {id: d10, role: distractor, text: "The target redesigned its logo before the sale."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: The target's reported revenue had been inflated by channel stuffing, pushing excess stock to distributors at quarter end with side letters allowing returns.
+    missing_hypothesis_alternatives:
+    - Revenue was pulled forward by loading distributors with stock they could return, so sales fell once the practice stopped.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_11
+  capability: missing_hypothesis
+  control: false
+  domain: voting_information
+  given_hypotheses:
+  - A foreign state media outlet started the false rumour about the voting date.
+  - The false voting date spread from a typo on the election office's website.
+  data_points:
+  - {id: d1, role: distractor, text: "A review of the state media outlet's output shows it mentioned the false date only after it had trended, quoting local posts."}
+  - {id: d2, role: distractor, text: "Every archived version of the election office's website shows the correct voting date."}
+  - {id: d3, role: cluster_member, text: "Eleven local neighbourhood groups on a social network changed administrators within the same week in September."}
+  - {id: d4, role: distractor, text: "Voter registration rose 8% compared with the last election."}
+  - {id: d5, role: cluster_member, text: "The false voting date first appeared in posts in these neighbourhood groups, hours before any other source."}
+  - {id: d6, role: distractor, text: "A candidate's rally drew 2,000 people in the town square."}
+  - {id: d7, role: cluster_member, text: "The new administrators' accounts were all created within the same two days and have no friends who live in the area."}
+  - {id: d8, role: distractor, text: "The election office hired 40 temporary staff for polling day."}
+  - {id: d9, role: cluster_member, text: "A forum advertisement in August offered 'aged local community groups with 5,000+ members' for sale."}
+  - {id: d10, role: distractor, text: "A local newspaper was bought by a regional media group."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: The rumour was spread through local community groups whose administrator accounts had been bought and taken over.
+    missing_hypothesis_alternatives:
+    - Someone purchased control of established neighbourhood groups and used them to seed the false voting date.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_12
+  capability: missing_hypothesis
+  control: false
+  domain: aviation_maintenance
+  given_hypotheses:
+  - The brake overheating events were caused by pilots braking too hard on landing.
+  - The brake overheating events were caused by contaminated runways.
+  data_points:
+  - {id: d1, role: distractor, text: "Flight data from the three events shows landing speeds and brake application within normal ranges."}
+  - {id: d2, role: distractor, text: "Runway friction measurements at the airports were within limits, and two of the three events happened on dry runways."}
+  - {id: d3, role: cluster_member, text: "Since March, brake pads for the fleet have been bought from a new parts broker at a 40% lower price."}
+  - {id: d4, role: distractor, text: "The airline introduced a new cabin menu in the spring."}
+  - {id: d5, role: cluster_member, text: "All three aircraft with brake overheating warnings had their brake pads replaced after March."}
+  - {id: d6, role: distractor, text: "Cabin crew rosters moved to a new scheduling system."}
+  - {id: d7, role: cluster_member, text: "The pads' certificates of conformity carry a lot number format that the pad manufacturer says it stopped using in 2019."}
+  - {id: d8, role: distractor, text: "A new de-icing contractor started work at one of the airline's bases."}
+  - {id: d9, role: cluster_member, text: "Aircraft whose pads were fitted before March, flying the same routes, had no warnings."}
+  - {id: d10, role: distractor, text: "Ticket sales rose 12% over the summer."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: The brakes overheat because counterfeit or non-conforming brake pads were supplied by a new low-cost parts broker.
+    missing_hypothesis_alternatives:
+    - Brake pads bought from the new broker are not genuine parts and cannot handle normal braking heat.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_13
+  capability: missing_hypothesis
+  control: false
+  domain: water_utility
+  given_hypotheses:
+  - The discoloured water is caused by lead leaching from old pipes.
+  - The discoloured water is caused by contamination at the source reservoir.
+  data_points:
+  - {id: d1, role: distractor, text: "Lead in the samples from the affected homes is below the detection limit."}
+  - {id: d2, role: distractor, text: "Monitoring at the reservoir outlet shows normal values for the whole month."}
+  - {id: d3, role: cluster_member, text: "The complaints of discoloured, chemical-smelling water all come from four streets around Mill Road."}
+  - {id: d4, role: distractor, text: "A new billing system went live at the water company."}
+  - {id: d5, role: cluster_member, text: "A metal-finishing plant on Mill Road is five months overdue for its annual backflow-preventer test."}
+  - {id: d6, role: distractor, text: "The water company's call centre extended its opening hours."}
+  - {id: d7, role: cluster_member, text: "Pressure in the Mill Road water main dropped sharply twice during a hydrant-flushing exercise last week."}
+  - {id: d8, role: distractor, text: "Resurfacing of Mill Road is scheduled for the spring."}
+  - {id: d9, role: cluster_member, text: "Samples from the affected streets contain nickel and a degreasing solvent."}
+  - {id: d10, role: distractor, text: "Rainfall this autumn was 20% above average."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: Chemicals from the metal-finishing plant were drawn back into the main through a cross-connection with an untested backflow preventer when pressure dropped during hydrant flushing.
+    missing_hypothesis_alternatives:
+    - Backflow from the industrial plant on Mill Road contaminated the public water main during the pressure drops.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_14
+  capability: missing_hypothesis
+  control: false
+  adversarial: coherent_but_irrelevant
+  domain: hospital_operations
+  given_hypotheses:
+  - The overdoses happened because the night shift was understaffed.
+  - The overdoses happened because a nurse picked the wrong medication.
+  data_points:
+  - {id: d1, role: distractor, text: "Night-shift staffing on wards 4 and 6 met the required nurse-to-patient ratio on all three nights."}
+  - {id: d2, role: distractor, text: "Each of the three doses was checked and signed by two nurses against the prescription, and the right drug was given."}
+  - {id: d3, role: cluster_member, text: "Infusion pumps on wards 4 and 6 received firmware version 3.1 on 10 October."}
+  - {id: d4, role: distractor, text: "The corridor of ward 4 is being repainted."}
+  - {id: d5, role: cluster_member, text: "All three overdose incidents involved infusions started on wards 4 and 6 after 10 October."}
+  - {id: d6, role: distractor, text: "Ward 6 had its flooring replaced in October."}
+  - {id: d7, role: cluster_member, text: "The release notes of firmware 3.1 mention 'harmonised dose unit display'."}
+  - {id: d8, role: distractor, text: "The painters and floor fitters worked night shifts on both wards to avoid disturbing patients."}
+  - {id: d9, role: cluster_member, text: "In two of the incidents the nurse entered the prescribed number in micrograms; the pump log records the same number in milligrams."}
+  - {id: d10, role: distractor, text: "The hospital raised its car park fees."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: The overdoses were caused by an infusion pump firmware update that changed the dose units, so numbers entered in micrograms ran as milligrams.
+    missing_hypothesis_alternatives:
+    - The new pump firmware changed how dose units are displayed, and doses were delivered a thousand times too high.
+    cluster_members: [d3, d5, d7, d9]
+  note: "Decoy: d4, d6, d8 form a coherent renovation story on the same two wards and the same nights; it explains nothing."
+
+- id: miss_15
+  capability: missing_hypothesis
+  control: false
+  domain: retail_loss
+  given_hypotheses:
+  - Store 12's losses are caused by organised shoplifting.
+  - Store 12's losses are caused by cashier errors at the tills.
+  data_points:
+  - {id: d1, role: distractor, text: "A review of the exit cameras found no unusual shoplifting incidents, and security-tag alarms were at normal levels."}
+  - {id: d2, role: distractor, text: "Till counts balanced within five euros on 95% of shifts."}
+  - {id: d3, role: cluster_member, text: "Refunds at store 12 are three times the chain average, most of them cash refunds without a receipt."}
+  - {id: d4, role: distractor, text: "Store 12 got a new window display."}
+  - {id: d5, role: cluster_member, text: "92% of no-receipt refunds at store 12 were approved with the same manager override code."}
+  - {id: d6, role: distractor, text: "A competitor opened a store two streets away."}
+  - {id: d7, role: cluster_member, text: "The manager whose override code was used was on annual leave during two of the weeks with the highest refunds."}
+  - {id: d8, role: distractor, text: "Store 12 extended its Sunday opening hours."}
+  - {id: d9, role: cluster_member, text: "Stock counts do not show the refunded items coming back into inventory."}
+  - {id: d10, role: distractor, text: "Loyalty card sign-ups at store 12 rose 10%."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: An employee is taking cash through fake no-receipt refunds, approved with a manager's override code used without the manager.
+    missing_hypothesis_alternatives:
+    - Refund fraud by staff misusing a manager's override code for returns that never happened.
+    cluster_members: [d3, d5, d7, d9]
+
+- id: miss_16
+  capability: missing_hypothesis
+  control: false
+  adversarial: near_miss
+  domain: power_distribution
+  given_hypotheses:
+  - The night-time outages are caused by the substation transformer overheating.
+  - The night-time outages are caused by tree branches touching the lines.
+  data_points:
+  - {id: d1, role: distractor, text: "The substation transformer's temperature stayed well below its limit, and the outages happened on cool nights."}
+  - {id: d2, role: distractor, text: "Line patrols found no vegetation contact, and the trips happened on windless nights."}
+  - {id: d3, role: cluster_member, text: "The outages happen between 1 and 4 a.m., when household demand is lowest."}
+  - {id: d4, role: distractor, text: "The utility launched a new customer app."}
+  - {id: d5, role: cluster_member, text: "A warehouse on Dock Street, registered as vacant storage, has drawn about 900 kW continuously since June."}
+  - {id: d6, role: distractor, text: "Streetlights in the district were converted to LED."}
+  - {id: d7, role: cluster_member, text: "Neighbours report a constant loud hum from the Dock Street warehouse and new heat vents on its roof."}
+  - {id: d8, role: distractor, text: "A bakery opened on Dock Street in June; its ovens start at 4 a.m."}
+  - {id: d9, role: cluster_member, text: "The feeder that trips serves the Dock Street block; its night-time load now exceeds its daytime peak."}
+  - {id: d10, role: distractor, text: "Electricity tariffs rose 5% this year."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: An undeclared cryptocurrency-mining (or other high-load computing) operation in the Dock Street warehouse overloads the feeder at night.
+    missing_hypothesis_alternatives:
+    - A hidden industrial load in the 'vacant' Dock Street warehouse, running around the clock, trips the feeder when it adds to night-time load.
+    cluster_members: [d3, d5, d7, d9]
+  note: "Near miss: the bakery (d8) is on the same street and opened in June, but its 4 a.m. start does not match outages from 1 a.m."
+
+# ---------------------------------------------------------------- controls: nothing is missing
+
+- id: miss_ctrl_03
+  capability: missing_hypothesis
+  control: true
+  domain: food_safety
+  given_hypotheses:
+  - Diners fell ill from chicken undercooked on a grill with a faulty thermostat.
+  - Diners fell ill from norovirus spread by a sick kitchen worker.
+  data_points:
+  - {id: d1, role: cluster_member, text: "Grill 2's thermostat was found to read 40°C higher than the actual surface temperature."}
+  - {id: d2, role: distractor, text: "The restaurant repainted its dining room in the summer."}
+  - {id: d3, role: cluster_member, text: "A test piece of chicken cooked on grill 2 reached only 58°C at its core."}
+  - {id: d4, role: distractor, text: "The wine list was updated with three new suppliers."}
+  - {id: d5, role: cluster_member, text: "A line cook worked two shifts while vomiting, staff rotas show."}
+  - {id: d6, role: distractor, text: "The ice machine's storage bin swab was within limits."}
+  - {id: d7, role: cluster_member, text: "Stool samples from ill diners tested positive for Campylobacter in some cases and norovirus in others."}
+  - {id: d8, role: distractor, text: "The restaurant's online booking system had a short outage."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: null
+    missing_hypothesis_alternatives: []
+    cluster_members: []
+
+- id: miss_ctrl_04
+  capability: missing_hypothesis
+  control: true
+  domain: cyber_security
+  given_hypotheses:
+  - The ransomware got in through an unpatched VPN appliance.
+  - The backups were lost because the backup server was joined to the same domain and was encrypted too.
+  data_points:
+  - {id: d1, role: cluster_member, text: "The VPN appliance was two security patches behind, including one for a flaw being exploited at the time."}
+  - {id: d2, role: distractor, text: "Staff completed the annual security awareness course in June."}
+  - {id: d3, role: cluster_member, text: "The first malicious login to the internal network came from the VPN appliance's address."}
+  - {id: d4, role: distractor, text: "The company moved its email to a cloud provider last year."}
+  - {id: d5, role: cluster_member, text: "The backup server was a member of the main domain and was encrypted in the same hour as the file servers."}
+  - {id: d6, role: distractor, text: "No browser extensions are allowed on company laptops."}
+  - {id: d7, role: cluster_member, text: "The backup job had no offline or immutable copy."}
+  - {id: d8, role: distractor, text: "The IT team grew from four to six people this year."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: null
+    missing_hypothesis_alternatives: []
+    cluster_members: []
+
+- id: miss_ctrl_05
+  capability: missing_hypothesis
+  control: true
+  domain: supply_chain
+  given_hypotheses:
+  - Resin deliveries stopped because of a fire at the sole resin supplier's plant.
+  - Deliveries that were possible were delayed by a strike at the trucking company.
+  data_points:
+  - {id: d1, role: cluster_member, text: "The resin supplier's plant had a fire in its extrusion hall on 3 September and declared force majeure."}
+  - {id: d2, role: distractor, text: "The company's customs classification for resin has not changed in five years."}
+  - {id: d3, role: cluster_member, text: "The supplier has no second plant producing this resin grade."}
+  - {id: d4, role: distractor, text: "A new forklift fleet was leased for the warehouse."}
+  - {id: d5, role: cluster_member, text: "Drivers at the trucking company were on strike from 10 to 24 September."}
+  - {id: d6, role: distractor, text: "The purchasing manager attended a trade fair."}
+  - {id: d7, role: cluster_member, text: "The two shipments the supplier could send from its warehouse stock were delivered nine days late, in the strike period."}
+  - {id: d8, role: distractor, text: "The company's sales of finished parts were stable in August."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: null
+    missing_hypothesis_alternatives: []
+    cluster_members: []
+
+- id: miss_ctrl_06
+  capability: missing_hypothesis
+  control: true
+  domain: drug_safety
+  given_hypotheses:
+  - The rashes are an allergic reaction to the new excipient added to the tablets.
+  - Some patients took double doses because the new packaging is confusing.
+  data_points:
+  - {id: d1, role: cluster_member, text: "The rashes began after the tablets were reformulated with a new excipient in April."}
+  - {id: d2, role: distractor, text: "The drug's price was unchanged this year."}
+  - {id: d3, role: cluster_member, text: "Patch tests in six affected patients were positive for the new excipient."}
+  - {id: d4, role: distractor, text: "Patients taking other drugs metabolised by the same liver enzyme had no more rashes than others."}
+  - {id: d5, role: cluster_member, text: "Pharmacists report patients misreading the new blister pack's day labels and taking two tablets a day."}
+  - {id: d6, role: distractor, text: "The company opened a new office in Lisbon."}
+  - {id: d7, role: cluster_member, text: "Calls to the patient helpline about the packaging doubled after the new pack was introduced."}
+  - {id: d8, role: distractor, text: "A medical conference presented an unrelated study on the drug's long-term benefits."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: null
+    missing_hypothesis_alternatives: []
+    cluster_members: []

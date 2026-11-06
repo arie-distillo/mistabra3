@@ -8,7 +8,7 @@ Sources:
   native YAML           testbed/scenarios/*.yaml               (load_yaml)
   PoC labelled data     testbed/data/community_safety/          (from_community_safety)
   ACH case files        testbed/sources/*_ach_*.yaml or private  (from_ach)   — project format: claims, episodes, ground_truth
-  phase-1 cases         testbed/sources/phase1_cases.yaml       (from_phase1) — conj_* / miss_* and their controls
+  phase-1 cases         testbed/sources/phase1*.yaml           (from_phase1) — conj_* / miss_* and their controls
 """
 from __future__ import annotations
 
