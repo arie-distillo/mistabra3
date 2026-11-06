@@ -2,7 +2,10 @@ id: flood_conjunction
 title: Urban flood — two individually weak episodes that are strong together
 kind: sequence
 note: >
-  Neither the rain forecast nor the budget cut alone makes a flood in the lower districts likely; together they do.
+  Neither the rain forecast nor the deferred drain maintenance alone makes a flood in the lower districts likely;
+  together they do. (2026-11-06: the budget episode was rewritten. "Budget cut by half, autumn clearing postponed"
+  scored 0.68 alone in three runs: the model reads it as a flood precursor on its own, so it could not test the
+  conjunction. A routine deferral among fourteen items is weak alone and still means uncleared drains.)
   Expected: the first episode articulates a hypothesis about drainage capacity, the second matches it, and the
   hypothesis's standing ends high although each episode's own score stays low.
 mission:
@@ -34,8 +37,8 @@ steps:
   - label: budget
     episode:
       text: >
-        The council minutes record that this year's drain maintenance budget for the lower districts was cut by
-        half, and the autumn clearing of inlets and culverts in Canal Quarter has been postponed.
+        The council's finance committee minutes list, among fourteen items deferred to the next quarter, "routine
+        drainage maintenance, Canal Quarter", next to street-light replacement and park benches.
       source: council minutes
       credibility: 0.9
       occurred: "2026-10-21T09:00:00Z"

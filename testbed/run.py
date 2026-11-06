@@ -2,7 +2,7 @@
 
     python -m testbed.run                         # fake provider, offline, free: proves the plumbing end to end
     python -m testbed.run --live                  # provider/model/key from MISTABRA_* env: the quality measurements
-    python -m testbed.run --live --compare        # judged standing (the frame) vs noisy-OR standing (baseline), same inputs
+    python -m testbed.run --live --compare        # noisy-OR standing (default) vs model-judged standing, same inputs
     python -m testbed.run --only miss_ --only conj_01
     python -m testbed.run --live --cache .cache/mistabra.sqlite   # re-runs reuse model outputs
     python -m testbed.run --live --repeat 3       # three independent runs (run 1 may reuse the cache), mean / min / max per metric
@@ -170,7 +170,7 @@ def main(argv=None) -> int:
         over["call_log"] = calls                           # every model call, with prompt and output: the "why" behind the report
     if a.temperature is not None:
         over["temperature"] = a.temperature
-    modes = ["judged", "noisy_or"] if a.compare else [a.standing or os.environ.get("MISTABRA_STANDING", "judged")]
+    modes = ["noisy_or", "judged"] if a.compare else [a.standing or os.environ.get("MISTABRA_STANDING", "noisy_or")]
     runs = []
     for i in range(max(1, a.repeat)):
         if a.repeat > 1:

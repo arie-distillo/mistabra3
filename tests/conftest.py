@@ -42,6 +42,9 @@ def op():
 
 
 def make_core(overrides=None, **settings):
+    """Tests exercise the judged path unless they say otherwise (it has the most moving parts); the product default is
+    noisy_or (test_default_standing_is_noisy_or)."""
+    settings.setdefault("standing", "judged")
     return Core(Settings(force_fake=True, **settings), provider=FakeProvider(overrides or {}))
 
 

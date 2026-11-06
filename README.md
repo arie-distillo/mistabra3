@@ -57,7 +57,8 @@ hypotheses do not change):
    it answer? An irrelevant episode stops here, after one call.
 2. `episode.assess` (reasoning tier) — a verdict on every held hypothesis (supports / weakens / unrelated), new
    hypotheses only for mechanisms the held ones miss, and the ordinary explanations (baselines) of each.
-3. `standing.judge` (reasoning tier) — every hypothesis the episode touched, judged together, before and after it.
+3. Standing of every hypothesis the episode touched, before and after it: computed (noisy-OR with the safeguards of
+   spec §5.2a–b; the default) or, with `MISTABRA_STANDING=judged`, one `standing.judge` call (reasoning tier).
 
 All model calls go through PydanticAI: each prompt's Pydantic schema is the output type, the model answers through an
 output tool, and a validation error is sent back to the model for up to two more attempts. Settings come from `.env`
@@ -102,9 +103,11 @@ With the fake provider the numbers prove that every path runs; they are not meas
 fake cannot articulate a missing hypothesis or recognise a refutation, so A2 and A3 come out near zero offline —
 which is also a check that the metrics discriminate.
 
-`--compare` runs the same scenarios with `standing=judged` (the reasoning model weighs the attached trajectories
-together — the frame under test) and `standing=noisy_or` (a deterministic baseline that can only accumulate
-support). A3's refutation cases are where the two should differ most.
+`--compare` runs the same scenarios with `standing=noisy_or` (computed: supporting trajectories accumulate, each
+weakening one removes up to half, neutral ones count nothing; the default) and `standing=judged` (the reasoning
+model weighs the attached trajectories together). Both modes share every other model answer, so the comparison is
+paired. Over three runs on 2026-11-06 noisy-OR was equal or better on every standing metric, at no model cost, so it
+became the default; `judged` stays available.
 
 ## History
 

@@ -304,3 +304,12 @@ def test_neutral_facts_stay_in_view_for_conjunctions(mission, op):
     make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep("The rated capacity is 500 kg.", eid="new"), hypothesis="H_elm"))
     assert seen["assess"]["given_hypothesis"]["evidence"] == ["(neutral) payload was 620 kg"]
     assert [t["stance"] for t in seen["judge"]["hypotheses"][0]["trajectories"]] == ["neutral"]
+
+
+def test_default_standing_is_noisy_or_and_makes_no_standing_call(mission, op):
+    from mistabra_core import Core, Settings
+    from mistabra_core.llm.fake import FakeProvider
+    core = Core(Settings(force_fake=True), provider=FakeProvider())
+    assert core.settings.standing == "noisy_or"
+    a = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack"))
+    assert a.groups and "standing.judge" not in {c.task for c in a.provenance.calls}

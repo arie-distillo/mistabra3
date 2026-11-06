@@ -118,12 +118,21 @@ def test_harness_keeps_and_reuses(tmp_path):
     from testbed.harness import run_scenario
     from testbed.scenario import discover
     sc = next(s for s in discover(include_private=False) if s.id == "flood_conjunction")
-    res = run_scenario(Core(Settings(force_fake=True)), sc, log=lambda m: None)
+    fake = FakeProvider()
+
+    def assess(d):   # the fake's word overlap cannot link the two episodes; a model would: match the held hypothesis
+        held = d.get("held_hypotheses") or []
+        if held:
+            return {"stored": [{"hypothesis_id": held[0]["id"], "stance": "supports", "confidence": 0.9, "fit": 0.4, "reach": 0.3}]}
+        return fake._episode_assess(d)
+    triage = lambda d: {**fake._episode_triage(d), "relevant": True, "confidence": 0.9}
+    res = run_scenario(Core(Settings(force_fake=True), provider=FakeProvider({"episode.assess": assess, "episode.triage": triage})), sc,
+                       log=lambda m: None)
     assert len(res.steps) == 2 and all(s.groups for s in res.steps)
     first = res.steps[0].groups[0]
     assert first.source == "articulated" and res.hypotheses[first.hypothesis_id]["lambda"] and res.hypotheses[first.hypothesis_id]["status"] == "proposed"
-    second = res.steps[1].groups[0]
-    assert second.hypothesis_id == first.hypothesis_id and second.without > 0      # the stored proposal was matched and weighed
+    second = next(g for g in res.steps[1].groups if g.hypothesis_id == first.hypothesis_id)
+    assert second.source == "predefined" and second.without > 0      # the stored proposal was matched and weighed
 
 
 def test_analyst_actions_applied():

@@ -58,7 +58,7 @@ class Settings:
     `force_fake` wins over any key, so tests can never reach a paid model.
     """
     provider: str = "fake"                  # fake | anthropic | openai (any OpenAI-compatible endpoint) | openrouter
-    model: str = ""                         # reasoning tier: abduction, baselines, standing
+    model: str = ""                         # reasoning tier: assessment (and standing, when judged)
     fast_model: str = ""                    # operational tier: episode triage (defaults to model)
     api_key: str | None = None
     base_url: str | None = None
@@ -73,7 +73,7 @@ class Settings:
     cache_salt: str = ""                    # part of the cache key: a different salt gives a fresh, independently cached run
     concurrency: int = 8                    # model requests in flight at once (independent calls run in parallel)
 
-    standing: str = "judged"                # judged (reasoning model weighs the attached trajectories) | noisy_or (baseline)
+    standing: str = "noisy_or"              # noisy_or (computed; default since 2026-11-06) | judged (the reasoning model weighs them)
     max_evidence: int = 6                   # facts already attached to a hypothesis shown when assessing a new episode
     unconfirmed_cap: float = 0.8            # standing ceiling while nothing attached is confirmed by the analyst
     proposed_weight: float = 0.5            # weight of a `proposed` trajectory in standing; confirmed = 1, rejected = 0
@@ -97,7 +97,7 @@ class Settings:
             base_url=e.get("MISTABRA_BASE_URL"),
             force_fake=_truthy(e.get("MISTABRA_FORCE_FAKE")),
             cache_path=Path(e["MISTABRA_CACHE"]) if e.get("MISTABRA_CACHE") else None,
-            standing=e.get("MISTABRA_STANDING", "judged"),
+            standing=e.get("MISTABRA_STANDING", "noisy_or"),
             max_tokens=int(e.get("MISTABRA_MAX_TOKENS") or 4000),
             reasoning=e.get("MISTABRA_REASONING") or None,
             failure_log=Path(e["MISTABRA_FAILURE_LOG"]) if e.get("MISTABRA_FAILURE_LOG") else None,

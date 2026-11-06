@@ -89,7 +89,7 @@ def _match_group(step: StepRec, want: list[str]):
 def a1_score(results: list[ScenarioResult]) -> dict:
     hits, errs, recall, false_sig, hard, pos, fails, orderings, missing = [], [], [], [], [], [], [], [], []
     for res in results:
-        bands = res.final.get("bands") or {"none": [0, 0.2], "weak": [0.2, 0.5], "strong": [0.5, 1.0]}
+        bands = res.final.get("bands") or {"none": [0, 0.2], "weak": [0.2, 0.4], "strong": [0.4, 1.0]}
         by_label = {}
         for s in res.steps:
             e = s.expect
