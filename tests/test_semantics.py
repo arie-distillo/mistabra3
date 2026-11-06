@@ -229,3 +229,35 @@ def test_held_hypotheses_carry_their_evidence_into_the_assessment(mission, op):
     elm = next(h for h in seen[0]["held_hypotheses"] if h["id"] == "H_elm")
     assert elm["evidence"] == [""] or len(elm["evidence"]) == 1
     assert elm["baselines"] == [{"id": "B_listing", "claim": "the person has a property interest"}]
+
+
+# ---------------------------------------------------------------- v3.2: anchored standing, refinement
+def test_kept_standing_anchors_before(mission, op):
+    seen = []
+    hyps = tuple(h.model_copy(update={"standing": 0.6}) if h.id == "H_elm" else h for h in op.hypotheses)
+    ctx = op.model_copy(update={"hypotheses": hyps, "trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
+    over = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm", "stance": "supports", "confidence": 0.9, "fit": 0.6, "reach": 0.3}]},
+            "standing.judge": lambda d: (seen.append(d), _judge(lambda h: (0.3, 0.7))(d))[1]}
+    s = make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0].standing
+    assert seen[0]["hypotheses"][0]["before"] == 0.6                 # the judge is told
+    assert s.without == 0.6 and s.value == 0.7 and s.delta == 0.1     # and its own "before" is overridden
+
+
+def test_kept_standing_ignored_without_weighted_evidence(mission, op):
+    hyps = tuple(h.model_copy(update={"standing": 0.6}) if h.id == "H_elm" else h for h in op.hypotheses)
+    over = {**WEAKENS, "standing.judge": _judge(lambda h: (0.0, 0.0))}
+    s = make_core(over).assess(mission, op.model_copy(update={"hypotheses": hyps}),
+                               TrajectoryInput(episode=ep(HOUSE, eid="new"), risk="attack")).groups[0].standing
+    assert s.without == 0.0
+
+
+def test_refinement_is_a_new_hypothesis_linked_to_the_held_one(mission, op):
+    over = {"episode.assess": {"stored": [{"hypothesis_id": "H_centre", "stance": "supports", "confidence": 0.9, "fit": 0.5, "reach": 0.3}],
+                               "new": [{"claim": "The Community Centre's side doors are being mapped for a night entry", "refines": "H_centre",
+                                        "fit": 0.6, "reach": 0.5},
+                                       {"claim": "Something else entirely", "refines": "nope", "fit": 0.4, "reach": 0.2}]}}
+    a = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOODED), risk="attack"))
+    held = next(g.target.hypothesis for g in a.groups if g.target.hypothesis.source == "predefined")
+    assert held.id == "H_centre" and held.refines is None
+    new = [g.target.hypothesis for g in a.groups if g.target.hypothesis.source == "articulated"]
+    assert [(h.refines) for h in new] == ["H_centre", None]           # an unknown id is dropped, not invented

@@ -126,6 +126,7 @@ class StoredVerdict(_Assessment):
 class NewHypothesis(_Assessment):
     claim: str
     entities: list[str] = Field(default_factory=list)
+    refines: str | None = None               # id of the held hypothesis whose mechanism this one corrects
 
 
 class GivenVerdict(_Assessment):
@@ -198,7 +199,7 @@ PROMPTS: dict[str, Prompt] = {
         "- If relevant, content: what in the episode connects it to the risk. " + CONTENT + " why: one sentence.\n"
         "Schema: {\"relevant\":bool,\"confidence\":0-1,\"radar\":int|null,\"touches\":[str],\"why\":str,\"content\":{...}|null}",
         TriageOut, "fast"),
-    "episode.assess": Prompt("episode.assess", "1", ANALYST,
+    "episode.assess": Prompt("episode.assess", "2", ANALYST,
         "Assess the episode against the risk and the hypotheses held about it (episode -> signal -> hypothesis -> risk).\n"
         "- signal: if both INPUT signal and detected_signal are null, articulate what in the episode connects it to the risk (or to the "
         "given hypothesis) as signal content; otherwise return null. " + CONTENT + "\n"
@@ -208,13 +209,19 @@ PROMPTS: dict[str, Prompt] = {
         "  - stored: one verdict for EVERY held hypothesis (rejected ones included): stance \"supports\" (the episode makes it more "
         "likely), \"weakens\" (less likely, or it removes the condition the hypothesis depends on), or \"unrelated\"; confidence 0-1 "
         "that the stance is right. Each held hypothesis lists recent evidence already attached to it: judge the episode in that light; "
-        "a fact that is unremarkable alone can confirm the mechanism the evidence points to.\n"
+        "a fact that is unremarkable alone can confirm the mechanism the evidence points to. \"supports\" means the episode fits that "
+        "hypothesis's own mechanism. Do not stretch a held hypothesis to cover evidence that another mechanism explains more "
+        "directly (e.g. registration and ownership changes are not 'layering of funds'): give it \"unrelated\" and state that "
+        "mechanism as a new hypothesis.\n"
         "  - new: at most `max_new` hypotheses that no held one states, best first, only if the episode points to a mechanism the held "
         "ones miss. A hypothesis is a specific mechanism by which the risk comes about: name the concrete actors, systems, places and "
         "means the episode shows (e.g. 'an insider used the print server to print out the customer database', not 'IT processes are "
         "flawed'). It must make the risk MORE likely. Not hypotheses: generalisations of a held one (weak processes, poor monitoring, "
         "a broader trend), restatements of a held one (give its verdict instead), rejected claims (never restate them), and ordinary "
         "explanations (normal, routine, benign: those are baselines).\n"
+        "  - Refinement: when the episode, read together with a held hypothesis's evidence, shows that its mechanism is different in a "
+        "way that matters (not merely more detail; e.g. the data left the building on paper, not over the network), state the corrected "
+        "mechanism as a new hypothesis with refines = that held id, and still give the held one its own verdict.\n"
         "  - If `pointed` is true (the analyst pointed the episode at this risk) and the episode bears on the risk at all, return at "
         "least one supporting held or new hypothesis: a weak one is fine, standing will say how weak.\n"
         "- For every hypothesis the episode supports (given, held or new): rationale 2-4 sentences from the episode via the hypothesis "
@@ -233,10 +240,10 @@ PROMPTS: dict[str, Prompt] = {
         "\"given\":{\"stance\":\"supports\"|\"weakens\",\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"entities\":[str],\"baselines\":B}|null,"
         "\"stored\":[{\"hypothesis_id\":str,\"stance\":\"supports\"|\"weakens\"|\"unrelated\",\"confidence\":0-1,\"fit\":0-1,\"reach\":0-1,"
         "\"rationale\":str,\"missing\":[str],\"baselines\":B}],"
-        "\"new\":[{\"claim\":str,\"entities\":[str],\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"baselines\":B}]} where "
+        "\"new\":[{\"claim\":str,\"refines\":str|null,\"entities\":[str],\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"baselines\":B}]} where "
         "B = {\"assessed\":[{\"baseline_id\":str,\"fit\":0-1,\"ordinary_outcome\":str,\"rationale\":str}],"
         "\"new\":[{\"claim\":str,\"ordinary_outcome\":str,\"rationale\":str,\"fit\":0-1}]}", AssessOut, "reasoning"),
-    "standing.judge": Prompt("standing.judge", "5", ANALYST,
+    "standing.judge": Prompt("standing.judge", "6", ANALYST,
         "For each hypothesis listed, judge its standing: how well it is supported, against its ordinary explanations (baselines), by "
         "ALL the trajectories attached to it, taken together. Give two values: `before`, from its `trajectories` alone, and `value`, "
         "with `this` (the new episode's trajectory) added. Each trajectory has a status and a weight: confirmed by the analyst "
@@ -245,7 +252,8 @@ PROMPTS: dict[str, Prompt] = {
         "make the hypothesis likely; two that report the same fact count once; a trajectory whose best explanation is ordinary adds "
         "little; a trajectory with stance \"weakens\" is counter-evidence and lowers the hypothesis in proportion to its weight; "
         "evidence that rules out the hypothesis's mechanism lowers it even if each item alone looks neutral. " + _SCALE + " "
-        "With no trajectories, before is 0. A supporting `this` keeps or raises the value; a `this` with stance \"weakens\" must lower "
+        "With no trajectories, before is 0. When a hypothesis comes with `before` already set (the standing last reported for it), "
+        "return that value as before and judge value as the change from it.  A supporting `this` keeps or raises the value; a `this` with stance \"weakens\" must lower "
         "it below before, the more so the more directly it removes the hypothesis's mechanism (removing the very condition the "
         "hypothesis depends on can halve it or more). The hypotheses are alternatives for the same risk: judge each on its own "
         "evidence, consistently with the others. rationale: 2-4 sentences on the change. "

@@ -83,6 +83,9 @@ class Hypothesis(Frozen):
     is_lambda: bool = Field(False, alias="lambda")
     status: HypothesisStatus = "open"
     baseline_of: tuple[str, ...] = ()          # for baselines: the primaries this one competes with
+    refines: str | None = None                 # the held hypothesis whose mechanism this one corrects (v3.2)
+    standing: float | None = None              # the last standing the layer reported for it, kept by the other layer, which
+                                               # clears it when the status of attached evidence changes (v3.2); anchors `without`
 
 
 class StoredTrajectory(Frozen):
@@ -177,6 +180,7 @@ class HypothesisRef(Frozen):
     entities: tuple[str, ...] = ()
     match_confidence: float | None = None      # predefined only
     status: HypothesisStatus | None = None     # of the stored hypothesis, if any
+    refines: str | None = None                 # articulated only: the held hypothesis whose mechanism this one corrects
 
 
 class RiskRef(Frozen):

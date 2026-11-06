@@ -55,7 +55,8 @@ class OtherLayer:
         given = ref.source == "given"
         self.hyps.append(Hypothesis(id=hid, risk_id=risk_id, claim=ref.claim, entities=ref.entities, origin="analyst" if given else "system",
                                     role=role, is_lambda=(ref.source == "articulated" and role == "primary"),
-                                    status="open" if given else "proposed", baseline_of=(baseline_of,) if baseline_of else ()))
+                                    status="open" if given else "proposed", baseline_of=(baseline_of,) if baseline_of else (),
+                                    refines=ref.refines))
         return hid
 
     def keep(self, a: Assessment, step: Step) -> list[str]:
@@ -66,6 +67,8 @@ class OtherLayer:
             risk_id = t.risk.risk_id
             hid = self._hyp_id(t.hypothesis, risk_id, "primary")
             ids.append(hid)
+            i = self._find(hid)
+            self.hyps[i] = self.hyps[i].model_copy(update={"standing": g.standing.value})   # kept to anchor the next judgment
             self.trs = [x for x in self.trs if not (x.episode_id == t.episode_id and x.hypothesis_id == hid)]
             occ = step.episode.occurred if isinstance(step.episode.occurred, str) else None
             self.trs.append(StoredTrajectory(id=f"T{len(self.trs) + 1}-{t.episode_id}-{hid}", episode_id=t.episode_id, occurred=occ,
@@ -90,6 +93,8 @@ class OtherLayer:
         if act.get("confirm") and ids:
             self.trs = [x.model_copy(update={"status": "confirmed"}) if x.episode_id == step.episode.id and x.hypothesis_id == ids[0]
                         and x.role == "primary" else x for x in self.trs]
+            i = self._find(ids[0])
+            self.hyps[i] = self.hyps[i].model_copy(update={"standing": None})   # evidence weights changed: re-judge from scratch
         for key, status in (("reject_hypothesis", "rejected"), ("support_hypothesis", "supported"), ("accept_hypothesis", "open")):
             if act.get(key):
                 hid = self.resolve(str(act[key]), created)
@@ -178,7 +183,7 @@ def run_scenario(core: Core, sc: Scenario, log=print) -> ScenarioResult:
             log(f"  [{sc.id}] step {i}/{len(sc.steps)} ({100 * i // len(sc.steps)}%)  [{time.time() - t0:.1f}s]")
     for h in layer.hyps:
         if h.role == "primary":
-            res.hypotheses[h.id] = {"claim": h.claim, "lambda": h.is_lambda, "origin": h.origin, "status": h.status,
+            res.hypotheses[h.id] = {"claim": h.claim, "lambda": h.is_lambda, "origin": h.origin, "status": h.status, "refines": h.refines,
                                     "risk": h.risk_id, "standing": last_standing.get(h.id)}
     res.final = {**sc.final, "_created": created}
     return res

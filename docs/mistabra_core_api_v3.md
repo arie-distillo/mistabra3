@@ -208,6 +208,18 @@ episode is returned as a trajectory to that hypothesis with `stance: weakens` an
 and standing weighs it as evidence against the hypothesis. Without this, counter-evidence would be judged irrelevant and dropped,
 and a hypothesis could only ever gain standing.
 
+### 5.2b Anchored standing and refinement (v3.2)
+
+- **Anchored standing.** A hypothesis in the operational context may carry `standing`: the value the layer last reported for
+  it, kept by the other layer. When present (and evidence with weight is attached), it is `without` for the next episode, and
+  the layer judges only the change. The other layer clears it whenever the status of attached evidence changes (an analyst
+  confirms or rejects a trajectory), so the next call re-judges from the evidence. Without it, standing is re-judged from
+  scratch on every episode and drifts between consecutive calls.
+- **Refinement.** When an episode, read with a held hypothesis's evidence, shows that its mechanism is different in a way that
+  matters — not merely more detail — the layer articulates the corrected mechanism as a new hypothesis with `refines` set to
+  the held one's id, and still gives the held one its own verdict. Both are returned; the other layer may keep both, or retire
+  the held one. A stored hypothesis keeps `refines` so the lineage is visible.
+
 ### 5.3 Reuse of stored hypotheses and baselines
 
 - The layer matches every articulated claim against the stored hypotheses of the relevant risk — including `proposed` ones — and reuses a match when it is the same claim, reporting `match_confidence`. Returning `articulated` for a claim a stored hypothesis already expresses is a defect and is measured (section 8).

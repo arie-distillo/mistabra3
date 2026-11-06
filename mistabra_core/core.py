@@ -193,7 +193,7 @@ class Core:
         run.saw(*(b for bs in baselines_of.values() for b in bs))
         def held_view(h):
             ev = [t.signal.summary for t in op.attached(h.id) if t.status != "rejected" and t.episode_id != ep.id][-3:]
-            return {"id": h.id, "claim": h.claim, "status": h.status, "evidence": ev,
+            return {"id": h.id, "claim": h.claim, "status": h.status, "refines": h.refines, "evidence": ev,
                     "baselines": [{"id": b.id, "claim": b.claim} for b in baselines_of.get(h.id, [])]}
         out = self.gw.call("episode.assess", {
             "risk_text": risk.text, "context": ctx, "pointed": pointed,
@@ -241,7 +241,8 @@ class Core:
                 if _norm(claim) in seen:
                     continue
                 seen.add(_norm(claim))
-                entries.append(_Entry(HypothesisRef(source="articulated", claim=claim, entities=tuple(n.entities)), "supports", n))
+                entries.append(_Entry(HypothesisRef(source="articulated", claim=claim, entities=tuple(n.entities),
+                                                    refines=n.refines if n.refines in known else None), "supports", n))
             entries = [e for e in entries if include_rejected or e.href.status != "rejected"]
             if not entries:
                 return []
@@ -255,7 +256,8 @@ class Core:
         rref = RiskRef(risk_id=risk.id, source=risk_source)
         built = [self._target(ep, signal, rref, e, baselines_of.get(e.href.id, []) if e.href.id else []) for e in entries]
         items = [self._attached_items(op, ti, e.href, run) for e in entries]
-        standings = self._standings(ti, risk, built, items, run)
+        anchors = [h.standing if e.href.id and (h := op.hypothesis(e.href.id)) is not None else None for e in entries]
+        standings = self._standings(ti, risk, built, items, anchors, run)
         return [AssessmentGroup(target=t, baselines=tuple(b), standing=st) for (t, b), st in zip(built, standings)]
 
     # ---------------------------------------------------------------- one target
@@ -307,24 +309,29 @@ class Core:
                 "reach": target.reach, "occurred": ti.episode.occurred if isinstance(ti.episode.occurred, str) else None,
                 "summary": target.signal.content.summary, "rationale": target.rationale}
 
-    def _standings(self, ti: TrajectoryInput, risk: Risk, built: list, items: list[list[dict]], run: _Run) -> list[Standing]:
+    def _standings(self, ti: TrajectoryInput, risk: Risk, built: list, items: list[list[dict]], anchors: list[float | None],
+                   run: _Run) -> list[Standing]:
         """Standing of every touched hypothesis, before and after this episode (spec §5.3, §5.2a). Judged together in one
-        call; a supporting trajectory never lowers standing, a weakening one never raises it."""
+        call; a supporting trajectory never lowers standing, a weakening one never raises it. When the other layer kept the
+        standing last reported for a hypothesis (v3.2), that is `before`: standing becomes a chain of updates instead of
+        being re-judged from scratch, which drifted by up to 0.25 between consecutive episodes."""
+        anchors = [a if a is not None and any(i["weight"] > 0 for i in it) else None for a, it in zip(anchors, items)]
         thises = [self._this(ti, t) for t, _ in built]
         if self.settings.standing == "noisy_or":
-            raw = [(noisy_or(it), noisy_or(it + [th]), "noisy-OR of weighted scores") for it, th in zip(items, thises)]
+            raw = [(noisy_or(it), noisy_or(it + [th]), "noisy-OR of weighted scores") for it, th in zip(items, thises)]   # deterministic: no anchor needed
         else:
             keys = [f"h{i + 1}" for i in range(len(built))]
             fields = ("status", "stance", "weight", "score", "fit", "reach", "occurred", "summary", "rationale")
             out = self.gw.call("standing.judge", {"risk_text": risk.text, "hypotheses": [
                 {"key": k, "claim": t.hypothesis.claim, "baselines": sorted({b.hypothesis.claim for b in bl}),
-                 "trajectories": [{f: i[f] for f in fields} for i in it], "this": {f: th[f] for f in fields}}
-                for k, (t, bl), it, th in zip(keys, built, items, thises)]}, recorder=run.rec)
+                 "trajectories": [{f: i[f] for f in fields} for i in it], "this": {f: th[f] for f in fields},
+                 **({"before": a} if a is not None else {})}
+                for k, (t, bl), it, th, a in zip(keys, built, items, thises, anchors)]}, recorder=run.rec)
             got = {x.key: x for x in out.standings}
             raw = []
-            for k, it in zip(keys, items):
+            for k, it, a in zip(keys, items, anchors):
                 x = got.get(k)
-                before = _clip(x.before) if x is not None and any(i["weight"] > 0 for i in it) else 0.0
+                before = a if a is not None else (_clip(x.before) if x is not None and any(i["weight"] > 0 for i in it) else 0.0)
                 raw.append((before, _clip(x.value) if x is not None else before, x.rationale if x is not None else "no judgment returned"))
         res = []
         for (before, value, why), (t, _), it, th in zip(raw, built, items, thises):

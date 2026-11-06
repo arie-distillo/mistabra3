@@ -229,3 +229,23 @@ def test_call_log_records_every_call_with_its_episode(tmp_path):
     rows = [_j.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
     assert rows and all(r["episode"] == sc.steps[0].episode.id and r["output"] is not None for r in rows)
     assert any(r["cached"] for r in rows) and any(not r["cached"] for r in rows)
+
+
+def test_standing_is_a_chain_of_updates_across_steps():
+    """The other layer keeps the reported standing; the next step's `without` starts from it (spec v3.2)."""
+    from testbed.harness import run_scenario
+    from testbed.scenario import discover
+    from mistabra_core import Core
+    core = Core(Settings(force_fake=True), provider=FakeProvider())
+    checked = 0
+    for sc in [s for s in discover() if s.id.startswith("miss_0")]:
+        res = run_scenario(core, sc, log=lambda *_: None)
+        last = {}
+        for st in res.steps:
+            for g in st.groups:
+                if g.hypothesis_id in last and g.without > 0:
+                    assert g.without == last[g.hypothesis_id]
+                    checked += 1
+                last[g.hypothesis_id] = g.standing
+        assert all(res.hypotheses[h]["standing"] == v for h, v in last.items())
+    assert checked
