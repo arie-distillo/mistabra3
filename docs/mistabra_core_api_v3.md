@@ -219,6 +219,9 @@ and a hypothesis could only ever gain standing.
   matters — not merely more detail — the layer articulates the corrected mechanism as a new hypothesis with `refines` set to
   the held one's id, and still gives the held one its own verdict. Both are returned; the other layer may keep both, or retire
   the held one. A stored hypothesis keeps `refines` so the lineage is visible.
+- **Neutral.** When the analyst gives a hypothesis and the episode does not bear on it, the group is still returned (the
+  analyst asked) with `stance: neutral`, `score` 0 and standing unchanged; standing ignores neutral trajectories. Before this,
+  the only answers were supports or weakens, and routine details were forced into counter-evidence.
 - **Ceiling without confirmation.** While nothing attached to a hypothesis is confirmed by the analyst (and the analyst did not
   submit this trajectory), standing stays at or below 0.8 (`unconfirmed_cap`): the upper range means confirmed, and the
   layer's own proposals must not talk it there.

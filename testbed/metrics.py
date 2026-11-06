@@ -96,7 +96,8 @@ def a1_score(results: list[ScenarioResult]) -> dict:
             if not e:
                 continue
             g = _best(s, e.get("risk"))
-            x = g.score if g else 0.0
+            solo = res.final.get("_solo_scores") or {}
+            x = solo[s.label] if s.label in solo else (g.score if g else 0.0)   # conjunction scenarios: the episode alone
             by_label[s.label] = x
             if e.get("band"):
                 lo, hi = bands[e["band"]]
@@ -178,7 +179,8 @@ def a3_combination(results: list[ScenarioResult], high: float = 0.5, low: float 
             cands = _wanted(res, js["hypothesis"])   # the strongest of them at the end
             hid = max(cands, key=lambda c: res.hypotheses.get(c, {}).get("standing") or 0.0, default=None)
             h = res.hypotheses.get(hid or "", {})
-            scores = [g.score for s in res.steps for g in s.groups if g.hypothesis_id == hid]
+            solo = res.final.get("_solo_scores")
+            scores = list(solo.values()) if solo else [g.score for s in res.steps for g in s.groups if g.hypothesis_id == hid]
             val = h.get("standing") or 0.0
             strong = val >= js.get("min_standing", high) and (max(scores, default=0) < js.get("max_single", high))
             (joint_ctrl if res.control else joint).append(strong)

@@ -131,7 +131,7 @@ class NewHypothesis(_Assessment):
 
 
 class GivenVerdict(_Assessment):
-    stance: Literal["supports", "weakens"] = "supports"
+    stance: Literal["supports", "weakens", "unrelated"] = "supports"
     entities: list[str] = Field(default_factory=list)
 
 
@@ -200,12 +200,17 @@ PROMPTS: dict[str, Prompt] = {
         "- If relevant, content: what in the episode connects it to the risk. " + CONTENT + " why: one sentence.\n"
         "Schema: {\"relevant\":bool,\"confidence\":0-1,\"radar\":int|null,\"touches\":[str],\"why\":str,\"content\":{...}|null}",
         TriageOut, "fast"),
-    "episode.assess": Prompt("episode.assess", "3", ANALYST,
+    "episode.assess": Prompt("episode.assess", "4", ANALYST,
         "Assess the episode against the risk and the hypotheses held about it (episode -> signal -> hypothesis -> risk).\n"
         "- signal: if both INPUT signal and detected_signal are null, articulate what in the episode connects it to the risk (or to the "
         "given hypothesis) as signal content; otherwise return null. " + CONTENT + "\n"
-        "- If given_hypothesis is set: assess only that hypothesis, in `given` (stance supports, or weakens if the episode makes it less "
-        "likely); leave stored and new empty.\n"
+        "- If given_hypothesis is set: assess only that hypothesis, in `given`: stance supports, weakens, or unrelated; leave stored and "
+        "new empty.\n"
+        "- Stances, for held and given hypotheses alike: \"unrelated\" is the usual verdict for an episode that neither makes the "
+        "hypothesis more nor less likely, including routine details merely consistent with normal operation (a manifest signed, the "
+        "kind of cargo, a log-in). \"weakens\" needs a reason the hypothesis becomes less likely: the episode contradicts its "
+        "mechanism, removes a condition it depends on, or shows a competing cause actually at work. A competing cause that is "
+        "merely possible is not a reason.\n"
         "- Otherwise:\n"
         "  - stored: one verdict for EVERY held hypothesis (rejected ones included): stance \"supports\" (the episode makes it more "
         "likely), \"weakens\" (less likely, or it removes the condition the hypothesis depends on), or \"unrelated\"; confidence 0-1 "
@@ -243,13 +248,13 @@ PROMPTS: dict[str, Prompt] = {
         "no baselines.\n"
         "- relevant: false only if the episode bears on nothing here.\n"
         "Schema: {\"relevant\":bool,\"signal\":{...}|null,"
-        "\"given\":{\"stance\":\"supports\"|\"weakens\",\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"entities\":[str],\"baselines\":B}|null,"
+        "\"given\":{\"stance\":\"supports\"|\"weakens\"|\"unrelated\",\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"entities\":[str],\"baselines\":B}|null,"
         "\"stored\":[{\"hypothesis_id\":str,\"stance\":\"supports\"|\"weakens\"|\"unrelated\",\"confidence\":0-1,\"revised_claim\":str|null,\"fit\":0-1,\"reach\":0-1,"
         "\"rationale\":str,\"missing\":[str],\"baselines\":B}],"
         "\"new\":[{\"claim\":str,\"entities\":[str],\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"baselines\":B}]} where "
         "B = {\"assessed\":[{\"baseline_id\":str,\"fit\":0-1,\"ordinary_outcome\":str,\"rationale\":str}],"
         "\"new\":[{\"claim\":str,\"ordinary_outcome\":str,\"rationale\":str,\"fit\":0-1}]}", AssessOut, "reasoning"),
-    "standing.judge": Prompt("standing.judge", "7", ANALYST,
+    "standing.judge": Prompt("standing.judge", "8", ANALYST,
         "For each hypothesis listed, judge its standing: how well it is supported, against its ordinary explanations (baselines), by "
         "ALL the trajectories attached to it, taken together. Give two values: `before`, from its `trajectories` alone, and `value`, "
         "with `this` (the new episode's trajectory) added. Each trajectory has a status and a weight: confirmed by the analyst "
@@ -260,8 +265,9 @@ PROMPTS: dict[str, Prompt] = {
         "evidence that rules out the hypothesis's mechanism lowers it even if each item alone looks neutral. " + _SCALE + " "
         "With no trajectories, before is 0. When a hypothesis comes with `before` already set (the standing last reported for it), "
         "return that value as before and judge value as the change from it.  A supporting `this` keeps or raises the value; a `this` with stance \"weakens\" must lower "
-        "it below before, the more so the more directly it removes the hypothesis's mechanism (removing the very condition the "
-        "hypothesis depends on can halve it or more). The hypotheses are alternatives for the same risk: judge each on its own "
+        "it below before, in proportion to what it shows: evidence that rules out the mechanism, or removes the very condition the "
+        "hypothesis depends on, can halve it or more; evidence of a competing cause, or a detail that merely fits it less well, "
+        "lowers it modestly (a few hundredths to a tenth). The hypotheses are alternatives for the same risk: judge each on its own "
         "evidence, consistently with the others. rationale: 2-4 sentences on the change. "
         "Schema: {\"standings\":[{\"key\":str,\"before\":0-1,\"value\":0-1,\"rationale\":str}]}", StandingsOut, "reasoning"),
 }

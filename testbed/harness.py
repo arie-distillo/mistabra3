@@ -186,4 +186,14 @@ def run_scenario(core: Core, sc: Scenario, log=print) -> ScenarioResult:
             res.hypotheses[h.id] = {"claim": h.claim, "lambda": h.is_lambda, "origin": h.origin, "status": h.status, "refines": h.refines,
                                     "risk": h.risk_id, "standing": last_standing.get(h.id)}
     res.final = {**sc.final, "_created": created}
+    if sc.final.get("jointly_strong"):
+        # "each alone is weak" means alone: every episode assessed against the starting context only, not after the others
+        # have shaped the hypothesis it attaches to (a hypothesis articulated from the first episode can already name the
+        # second's condition, and then the second scores high against it).
+        solo = {}
+        for st in sc.steps:
+            a = core.assess(sc.mission, sc.operational, TrajectoryInput(episode=st.episode, signal=st.signal, hypothesis=st.hypothesis,
+                                                                         risk=st.risk), scope=st.scope)
+            solo[st.label] = max((g.target.score for g in a.groups if g.target.stance == "supports"), default=0.0)
+        res.final["_solo_scores"] = solo
     return res

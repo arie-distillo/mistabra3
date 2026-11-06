@@ -213,7 +213,7 @@ class Core:
             v = out.given or GivenVerdict(rationale="The model returned no assessment of the given hypothesis.")
             href = (HypothesisRef(source="given", id=given_h.id, version=given_h.version, claim=given_h.claim, entities=given_h.entities,
                                   status=given_h.status) if given_h else HypothesisRef(source="given", claim=given_claim, entities=tuple(v.entities)))
-            entries.append(_Entry(href, v.stance, v))
+            entries.append(_Entry(href, "neutral" if v.stance == "unrelated" else v.stance, v))   # the analyst asked: always answered
         else:
             seen = set()
             for v in out.stored:
@@ -290,8 +290,8 @@ class Core:
                 episode_id=ep.id, role="baseline", signal=signal, risk=rref, hypothesis=HypothesisRef(source="articulated", claim=n.claim),
                 score=round(n.fit, 3), reach=0.0, fit=round(n.fit, 3), rationale=n.rationale, ordinary_outcome=n.ordinary_outcome))
         fit, reach = round(v.fit, 3), round(v.reach, 3)
-        if e.stance == "weakens":
-            fit, reach, score = round(min(v.fit, 0.3), 3), 0.0, 0.0   # counter-evidence carries no support; standing weighs it against
+        if e.stance in ("weakens", "neutral"):   # no support: standing weighs counter-evidence against it, and ignores neutral
+            fit, reach, score = round(min(v.fit, 0.3), 3), 0.0, 0.0
         else:
             best_b = max((b.fit for b in baselines), default=0.0)
             score = score_from(reach, fit, fit - best_b, signal.content.specificity, ep.credibility)
@@ -303,7 +303,7 @@ class Core:
     def _attached_items(self, op: OperationalContext, ti: TrajectoryInput, href: HypothesisRef, run: _Run) -> list[dict]:
         pw = self.settings.proposed_weight
         attached = op.attached(href.id)[-self.settings.max_attached:] if href.id else []
-        attached = [t for t in attached if t.episode_id != ti.episode.id]   # re-assessing an episode replaces its own trajectory
+        attached = [t for t in attached if t.episode_id != ti.episode.id and t.stance != "neutral"]   # re-assessing replaces its own; neutral bears on nothing
         run.saw(*attached)
         return [{"id": t.id, "status": t.status, "stance": t.stance, "weight": weight_of(t.status, pw), "score": t.score, "fit": t.fit,
                  "reach": t.reach, "occurred": t.occurred, "summary": t.signal.summary, "rationale": t.rationale} for t in attached]
@@ -343,7 +343,9 @@ class Core:
         for (before, value, why), (t, _), it, th in zip(raw, built, items, thises):
             if not (th["weight"] >= 1.0 or any(i["status"] == "confirmed" for i in it)):   # the layer's own proposals only
                 before, value = min(before, cap), min(value, cap)
-            if t.stance == "weakens":    # the judge must lower it; if it did not, damp like the noisy-OR baseline does
+            if t.stance == "neutral":    # the episode does not bear on the hypothesis: standing unchanged
+                value = before
+            elif t.stance == "weakens":    # the judge must lower it; if it did not, damp like the noisy-OR baseline does
                 value = value if value < before else round(before * (1 - 0.5 * th["weight"]), 3)
             else:
                 value = max(value, before)

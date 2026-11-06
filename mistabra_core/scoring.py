@@ -29,6 +29,8 @@ def noisy_or(items: list[dict]) -> float:
     """Supporting trajectories accumulate; each weakening one removes up to half of what was accumulated."""
     p, damp = 1.0, 1.0
     for t in items:
+        if t.get("stance") == "neutral":
+            continue
         if t.get("stance") == "weakens":
             damp *= 1.0 - 0.5 * t["weight"]
         else:

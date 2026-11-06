@@ -280,3 +280,13 @@ def test_unconfirmed_standing_is_capped(mission, op):
     confirmed = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
     s = make_core(over).assess(mission, confirmed, TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0].standing
     assert s.value == 0.95
+
+
+@pytest.mark.parametrize("strategy", ["judged", "noisy_or"])
+def test_given_hypothesis_episode_does_not_bear_on_is_neutral(mission, op, strategy):
+    ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
+    over = {"episode.assess": {"given": {"stance": "unrelated", "fit": 0.05, "rationale": "a routine detail"}},
+            "standing.judge": _judge(lambda h: (0.6, 0.3))}
+    g = make_core(over, standing=strategy).assess(mission, ctx, TrajectoryInput(episode=ep("The council repainted the bus shelter on Main Road.", eid="new"), hypothesis="H_elm")).groups[0]
+    assert g.target.stance == "neutral" and g.target.score == 0.0 and g.baselines == ()
+    assert g.standing.value == g.standing.without and g.standing.delta == 0.0
