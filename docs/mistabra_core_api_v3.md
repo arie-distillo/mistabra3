@@ -195,6 +195,7 @@ Because a hypothesis is always scored against its stored baselines, its scores a
 - The layer judges the attached trajectories jointly, not by summing scores: two weak trajectories may together make the hypothesis likely, and two strong ones may be the same fact reported twice.
 - Trajectories are weighted by status: `confirmed` fully; `proposed` less (a documented weight below 1); `rejected` not at all — the analyst judged that episode does not support the hypothesis — but listed in `used` so the exclusion is visible.
 - `without` is the standing computed the same way but without this episode; `delta` is what this episode adds. A small `score` with a large `delta` is the signature of a weak signal that matters in combination.
+- `value` is judged as an update of `without`: a supporting trajectory never lowers standing, a weakening one never raises it (v3.1, reference implementation: the judge sees `without`; if it fails to lower standing on counter-evidence, standing is damped as in the noisy-OR baseline).
 - Standing is returned for every group, including a Lambda hypothesis (then `without` is 0 unless earlier trajectories match it).
 
 Two safeguards against the system talking itself into a hypothesis: `score` never uses other trajectories, and `proposed` trajectories — the layer's own unconfirmed outputs — carry reduced weight in standing.

@@ -4,9 +4,14 @@ provenance (including how many attempts the model needed), and logs failed calls
 
 The layer keeps no state between `assess` calls besides this cache: in memory, or on disk when
 `Settings.cache_path` is set, so repeated testbed runs are cheap and identical inputs return identical outputs.
+
+`call` is synchronous and thread-safe. Every model request runs on one background event loop owned by the gateway,
+at most `Settings.concurrency` at a time, so callers can fan out independent calls from threads (the core does:
+radar reads, risks, groups) without sharing HTTP clients across event loops.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sqlite3
@@ -68,6 +73,33 @@ class Gateway:
         self.cache = _Cache(settings.cache_path)
         self.stats = {"calls": 0, "cached": 0, "errors": 0, "retries": 0}
         self._agents: dict[tuple, Agent] = {}
+        self._lock = threading.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._sem: asyncio.Semaphore | None = None
+
+    def _count(self, key: str, n: int = 1):
+        with self._lock:
+            self.stats[key] += n
+
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        with self._lock:
+            if self._loop is None:
+                loop = asyncio.new_event_loop()
+                threading.Thread(target=loop.run_forever, name="mistabra-llm", daemon=True).start()
+                self._sem = asyncio.run_coroutine_threadsafe(self._make_sem(), loop).result()
+                self._loop = loop
+            return self._loop
+
+    async def _make_sem(self) -> asyncio.Semaphore:
+        return asyncio.Semaphore(max(1, int(getattr(self.settings, "concurrency", 8) or 1)))
+
+    async def _arun(self, agent: Agent, user: str):
+        async with self._sem:
+            with capture_run_messages() as messages:
+                try:
+                    return await agent.run(user, model_settings=self.backend.model_settings()), messages, None
+                except Exception as e:  # noqa: BLE001 — mapped by the caller
+                    return None, messages, e
 
     def model_for(self, tier: str) -> str:
         return self.settings.model if tier == "reasoning" else self.settings.fast_model
@@ -78,11 +110,12 @@ class Gateway:
 
     def _agent(self, task: str, tier: str) -> Agent:
         k = (task, tier)
-        if k not in self._agents:
-            p = PROMPTS[task]
-            self._agents[k] = Agent(self.backend.model(tier), output_type=p.schema, system_prompt=p.system,
-                                    retries=OUTPUT_RETRIES, name=task.replace(".", "_"))
-        return self._agents[k]
+        with self._lock:
+            if k not in self._agents:
+                p = PROMPTS[task]
+                self._agents[k] = Agent(self.backend.model(tier), output_type=p.schema, system_prompt=p.system,
+                                        retries=OUTPUT_RETRIES, name=task.replace(".", "_"))
+            return self._agents[k]
 
     def call(self, task: str, variables: dict, *, recorder: Recorder | None = None) -> BaseModel:
         p = PROMPTS[task]
@@ -92,41 +125,44 @@ class Gateway:
         t0 = time.perf_counter()
         hit = self.cache.get(key)
         if hit is not None:
-            self.stats["cached"] += 1
+            self._count("cached")
             if recorder is not None:
                 recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=True, ok=True, latency_ms=0))
             return p.schema.model_validate_json(hit)
         out, usage, err = None, None, None
-        for attempt in range(3):
-            with capture_run_messages() as messages:
-                try:
-                    res = self._agent(task, p.tier).run_sync(user, model_settings=self.backend.model_settings())
-                    out, usage = res.output, res.usage
-                    break
-                except ModelHTTPError as e:
-                    if e.status_code in (401, 403):
-                        err = LLMAuthError(f"{task}: HTTP {e.status_code}: {str(e.body)[:300]}")
-                    elif e.status_code == 429 or e.status_code >= 500:
-                        err = LLMTransportError(f"{task}: HTTP {e.status_code}: {str(e.body)[:200]}")
-                    else:
-                        err = LLMError(f"{task}: HTTP {e.status_code}: {str(e.body)[:300]}")
-                except UnexpectedModelBehavior as e:
-                    err = LLMOutputError(f"{task}: {e}")
-                except ModelAPIError as e:
-                    err = LLMTransportError(f"{task}: {type(e).__name__}: {e}")
-                if not isinstance(err, LLMTransportError) or attempt == 2:
-                    self._log_failure(task, model, user, messages, err)
-                    break
-                time.sleep(min(0.5 * 2 ** attempt, 4))
+        loop = self._ensure_loop()
+        agent = self._agent(task, p.tier)
+        for attempt in range(4):
+            res, messages, e = asyncio.run_coroutine_threadsafe(self._arun(agent, user), loop).result()
+            if e is None:
+                out, usage = res.output, res.usage
+                break
+            if isinstance(e, ModelHTTPError):
+                if e.status_code in (401, 403):
+                    err = LLMAuthError(f"{task}: HTTP {e.status_code}: {str(e.body)[:300]}")
+                elif e.status_code == 429 or e.status_code >= 500:
+                    err = LLMTransportError(f"{task}: HTTP {e.status_code}: {str(e.body)[:200]}")
+                else:
+                    err = LLMError(f"{task}: HTTP {e.status_code}: {str(e.body)[:300]}")
+            elif isinstance(e, UnexpectedModelBehavior):
+                err = LLMOutputError(f"{task}: {e}")
+            elif isinstance(e, ModelAPIError):
+                err = LLMTransportError(f"{task}: {type(e).__name__}: {e}")
+            else:
+                raise e
+            if not isinstance(err, LLMTransportError) or attempt == 3:
+                self._log_failure(task, model, user, messages, err)
+                break
+            time.sleep(min(1.0 * 2 ** attempt, 8))
         latency = int((time.perf_counter() - t0) * 1000)
         if out is None:
-            self.stats["errors"] += 1
+            self._count("errors")
             if recorder is not None:
                 recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=False, ok=False, latency_ms=latency))
             raise err
-        self.stats["calls"] += 1
+        self._count("calls")
         retries = max(0, (usage.requests or 1) - 1)
-        self.stats["retries"] += retries
+        self._count("retries", retries)
         self.cache.put(key, out.model_dump_json())
         if recorder is not None:
             recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=False, ok=True, latency_ms=latency,
@@ -142,6 +178,6 @@ class Gateway:
             history = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
         except Exception:  # noqa: BLE001 — the log must never hide the original error
             history = [repr(m) for m in messages]
-        with path.open("a", encoding="utf-8") as f:
+        with self._lock, path.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "task": task, "model": model, "error": str(err),
                                 "prompt": user, "messages": history}, ensure_ascii=False) + "\n")

@@ -5,12 +5,14 @@
     python -m testbed.run --live --compare        # judged standing (the frame) vs noisy-OR standing (baseline), same inputs
     python -m testbed.run --only miss_ --only conj_01
     python -m testbed.run --live --cache .cache/mistabra.sqlite   # re-runs reuse model outputs
+    python -m testbed.run --live --jobs 8         # scenarios in parallel (default 4); steps within a scenario stay in order
 
 Writes a JSON report and a Markdown summary to testbed/reports/ (or --out). Reported, never gated.
 """
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import sys
@@ -39,7 +41,7 @@ HEADLINE = [
 ]
 
 
-def run(settings_overrides: dict, only: list[str], log=print) -> dict:
+def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4) -> dict:
     from mistabra_core import Core, Settings
     from mistabra_core.llm import LLMAuthError
     settings = Settings.from_env(**settings_overrides)
@@ -48,19 +50,32 @@ def run(settings_overrides: dict, only: list[str], log=print) -> dict:
     from mistabra_core.settings import describe_key
     log(f"testbed provider={settings.provider} ({describe_key(settings.provider) if settings.uses_real_llm else 'offline'}) model={settings.model} fast={settings.fast_model} reasoning={settings.reasoning or 'default'} standing={settings.standing} "
         f"scenarios={len(scenarios)} steps={sum(len(s.steps) * (max(1, len(s.operational.hypotheses)) if s.per_hypothesis else 1) for s in scenarios)}")
-    results, t0 = [], time.time()
-    for i, sc in enumerate(scenarios, 1):
+    t0 = time.time()
+    stop = []
+
+    def one(i_sc):
+        i, sc = i_sc
+        if stop:
+            return None
         log(f"[{i}/{len(scenarios)}] {sc.id} ({sc.kind}{', control' if sc.control else ''}) — {len(sc.steps)} steps  [{time.time() - t0:.0f}s]")
         try:
-            results.append(run_scenario(core, sc, log=log))
+            r = run_scenario(core, sc, log=log)
+            log(f"[{i}/{len(scenarios)}] {sc.id} done  [{time.time() - t0:.0f}s]")
+            return r
         except LLMAuthError as e:
-            log(f"STOPPED: the provider rejected the API key — {e}\n"
-                f"Check the key in .env (MISTABRA_API_KEY, or the provider's own variable) belongs to provider '{settings.provider}'.")
-            raise SystemExit(3)
+            stop.append(e)
+            return None
         except Exception as e:  # noqa: BLE001 — a failed scenario is reported, the run continues
             from .harness import ScenarioResult
-            results.append(ScenarioResult(id=sc.id, kind=sc.kind, control=sc.control, error=f"{type(e).__name__}: {e}"))
-            log(f"  ERROR {type(e).__name__}: {e}")
+            log(f"  [{sc.id}] ERROR {type(e).__name__}: {e}")
+            return ScenarioResult(id=sc.id, kind=sc.kind, control=sc.control, error=f"{type(e).__name__}: {e}")
+
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:   # scenarios are independent; each keeps its steps in order
+        results = list(ex.map(one, enumerate(scenarios, 1)))
+    if stop:
+        log(f"STOPPED: the provider rejected the API key — {stop[0]}\n"
+            f"Check the key in .env (MISTABRA_API_KEY, or the provider's own variable) belongs to provider '{settings.provider}'.")
+        raise SystemExit(3)
     metrics = all_metrics([r for r in results if r.error is None])
     return {"settings": {"provider": core.provider.name, "model": settings.model, "fast_model": settings.fast_model, "standing": settings.standing,
                          "proposed_weight": settings.proposed_weight}, "llm": dict(core.gw.stats), "seconds": round(time.time() - t0, 1),
@@ -102,6 +117,7 @@ def main(argv=None) -> int:
     ap.add_argument("--compare", action="store_true", help="run judged and noisy_or standing on the same inputs")
     ap.add_argument("--only", action="append", default=[], help="run scenarios whose id contains this text (repeatable)")
     ap.add_argument("--cache", help="SQLite file caching model outputs across runs")
+    ap.add_argument("--jobs", type=int, default=4, help="scenarios run in parallel (default 4)")
     ap.add_argument("--out", default=str(HERE / "reports"))
     a = ap.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):   # Windows consoles default to cp1252; never crash on a character
@@ -124,7 +140,7 @@ def main(argv=None) -> int:
     over = {"cache_path": Path(a.cache)} if a.cache else {}
     over["failure_log"] = Path(a.out) / "failures.jsonl"   # every failed model call, with prompt and raw output
     modes = ["judged", "noisy_or"] if a.compare else [a.standing or os.environ.get("MISTABRA_STANDING", "judged")]
-    reports = [run({**over, "standing": m}, a.only) for m in modes]
+    reports = [run({**over, "standing": m}, a.only, jobs=a.jobs) for m in modes]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")

@@ -1,5 +1,6 @@
 """Gateway contract (PydanticAI output tools, validation retries, error mapping, cache, records, failure log),
 settings, and the testbed's own plumbing (scenario loading, other-layer stub, metrics)."""
+import os
 import pytest
 
 from mistabra_core import Settings
@@ -78,7 +79,7 @@ def test_server_error_retried(monkeypatch):
     p, n = _raising(ModelHTTPError(503, "m", "busy"))
     with pytest.raises(LLMTransportError):
         _gw(p).call("radar.derive", V)
-    assert n["calls"] == 3
+    assert n["calls"] == 4   # 429 and 5xx: up to 4 attempts
 
 
 @pytest.mark.parametrize("provider,cls", [("openrouter", "OpenAIChatModel"), ("openai", "OpenAIChatModel"), ("anthropic", "AnthropicModel")])
@@ -194,3 +195,20 @@ def test_empty_string_for_an_object_means_not_given():
     p = FakeProvider({"trajectory.abduce": '{"relevant": false, "signal": "", "trajectories": []}'})
     out = _gw(p).call("trajectory.abduce", {"x": 1})
     assert out.relevant is False and out.signal is None and out.trajectories == [] and len(p.calls) == 1
+
+
+def test_parallel_scenarios_give_identical_results():
+    from testbed.run import run
+    os.environ["MISTABRA_FORCE_FAKE"] = "1"
+    a = run({}, ["flood", "miss_01", "hunch"], log=lambda *_: None, jobs=1)
+    b = run({}, ["flood", "miss_01", "hunch"], log=lambda *_: None, jobs=4)
+    assert a["metrics"] == b["metrics"]
+    strip = lambda r: [[{**st, "seconds": None, "calls": None, "cached": None} for st in x["steps"]] for x in r["scenarios"]]
+    assert strip(a) == strip(b)   # call counts may differ: shared work lands in the cache in a different order
+
+def test_gateway_is_safe_from_many_threads():
+    from concurrent.futures import ThreadPoolExecutor
+    g = _gw(FakeProvider())
+    with ThreadPoolExecutor(16) as ex:
+        outs = list(ex.map(lambda i: g.call("radar.read", {**V, "radar_query": f"q{i % 5}", "episode_text": "x", "source": "s"}), range(40)))
+    assert len(outs) == 40 and g.stats["calls"] + g.stats["cached"] == 40

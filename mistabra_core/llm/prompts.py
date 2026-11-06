@@ -210,7 +210,7 @@ PROMPTS: dict[str, Prompt] = {
         "ones covers (none if they cover it). "
         "Schema: {\"assessed\":[{\"baseline_id\":str,\"fit\":0-1,\"ordinary_outcome\":str,\"rationale\":str}],"
         "\"new\":[{\"claim\":str,\"ordinary_outcome\":str,\"rationale\":str,\"fit\":0-1}]}", BaselinesOut, "reasoning"),
-    "standing.judge": Prompt("standing.judge", "3", ANALYST,
+    "standing.judge": Prompt("standing.judge", "4", ANALYST,
         "Judge how well the hypothesis is supported, against its ordinary explanations (baselines), by ALL the trajectories attached to "
         "it, taken together. Each trajectory has a status and a weight: confirmed by the analyst (weight 1), proposed by the system and "
         "not yet confirmed (lower weight; treat as less certain), rejected by the analyst (weight 0: ignore it as support). Combine them as "
@@ -220,6 +220,9 @@ PROMPTS: dict[str, Prompt] = {
         "mechanism lowers it even if each item alone looks neutral. Use the whole scale: 0 = refuted; 0.05-0.2 = a single weak or unconfirmed indication; 0.2-0.4 = some support, ordinary "
         "explanations still as likely; 0.4-0.6 = several indications pointing the same way, ordinary explanations strained; 0.6-0.8 = "
         "strong, specific support from independent sources; 0.8-1 = confirmed by the analyst or near-certain. Proposed (unconfirmed) "
-        "trajectories alone should rarely put a hypothesis above 0.7. value: 0-1. rationale: 2-4 "
+        "trajectories alone should rarely put a hypothesis above 0.7. When `previous_standing` is given, it is the standing before "
+        "the trajectory with status \"this\" (the new episode): judge the update it causes. A supporting \"this\" keeps or raises the "
+        "value; a \"this\" with stance \"weakens\" must lower it below previous_standing, the more so the more directly it removes the "
+        "hypothesis's mechanism (an episode that removes the very condition the hypothesis depends on can halve it or more). value: 0-1. rationale: 2-4 "
         "sentences. Schema: {\"value\":0-1,\"rationale\":str}", StandingOut, "reasoning"),
 }

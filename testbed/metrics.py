@@ -70,9 +70,19 @@ def _best(step: StepRec, risk: str | None = None):
     return max(gs, key=lambda g: g.score) if gs else None
 
 
-def _created(res: ScenarioResult, label: str) -> str | None:
-    got = res.final.get("_created", {}).get(label) or []
-    return got[0] if got else None
+def _created(res: ScenarioResult, label: str) -> list[str]:
+    """Every hypothesis the step with this label returned (a step may raise several)."""
+    return list(dict.fromkeys(res.final.get("_created", {}).get(label) or []))
+
+
+def _wanted(res: ScenarioResult, ref: str) -> list[str]:
+    """`step:<label>` means any hypothesis that step returned; anything else is a stored id."""
+    return _created(res, ref[5:]) if str(ref).startswith("step:") else [ref]
+
+
+def _match_group(step: StepRec, want: list[str]):
+    """The group that answers a `matches` expectation: one on a wanted hypothesis if any, else the first."""
+    return next((g for g in step.groups if g.hypothesis_id in want), step.groups[0] if step.groups else None)
 
 
 # ---------------------------------------------------------------- A1
@@ -158,7 +168,8 @@ def a3_combination(results: list[ScenarioResult], high: float = 0.5, low: float 
     for res in results:
         js = res.final.get("jointly_strong")
         if js:
-            hid = _created(res, js["hypothesis"][5:]) if str(js["hypothesis"]).startswith("step:") else js["hypothesis"]
+            cands = _wanted(res, js["hypothesis"])   # the strongest of them at the end
+            hid = max(cands, key=lambda c: res.hypotheses.get(c, {}).get("standing") or 0.0, default=None)
             h = res.hypotheses.get(hid or "", {})
             scores = [g.score for s in res.steps for g in s.groups if g.hypothesis_id == hid]
             val = h.get("standing") or 0.0
@@ -186,12 +197,12 @@ def a4_matching(results: list[ScenarioResult]) -> dict:
             m = s.expect.get("matches")
             if not m:
                 continue
-            want = _created(res, m[5:]) if m.startswith("step:") else m
-            g = s.groups[0] if s.groups else None
-            good = g is not None and g.hypothesis_id == want and g.source == "predefined"
+            want = _wanted(res, m)
+            g = _match_group(s, want)
+            good = g is not None and g.hypothesis_id in want and g.source == "predefined"
             ok.append(good)
-            false_new.append(g is not None and g.source == "articulated")
-            wrong.append(g is not None and g.source == "predefined" and g.hypothesis_id != want)
+            false_new.append(not good and g is not None and g.source == "articulated")
+            wrong.append(not good and g is not None and g.source == "predefined")
             if not good:
                 fails.append(f"{res.id}:{s.label} expected match {want}, got {(g.source, g.hypothesis_id, g.claim) if g else 'no group'}")
     return {"match_accuracy": ratio(ok), "false_new_rate": ratio(false_new), "wrong_match_rate": ratio(wrong), "n": len(ok), "failures": fails}
@@ -254,7 +265,8 @@ def e_expectations(results: list[ScenarioResult]) -> dict:
     ok, fails = [], []
     for res in results:
         for s in res.steps:
-            e, g = s.expect, (s.groups[0] if s.groups else None)
+            e = s.expect
+            g = _match_group(s, _wanted(res, e["matches"])) if e.get("matches") else (s.groups[0] if s.groups else None)
             if "hypothesis_source" in e:
                 good = g is not None and g.source == e["hypothesis_source"]
                 ok.append(good)
@@ -265,11 +277,14 @@ def e_expectations(results: list[ScenarioResult]) -> dict:
                 ok.append(good)
                 if not good:
                     fails.append(f"{res.id}:{s.label} inconsistency {g.inconsistency if g else None}")
-            if "stance" in e:
-                good = g is not None and g.stance == e["stance"]
+            if "stance" in e:   # with `matches`, the stance of the group on the matched hypothesis
+                good = g is not None and g.stance == e["stance"] and (not e.get("matches") or g.hypothesis_id in _wanted(res, e["matches"]))
+                if good and e["stance"] == "weakens" and g.without > 0:
+                    good = g.standing < g.without      # counter-evidence must lower the standing
                 ok.append(good)
                 if not good:
-                    fails.append(f"{res.id}:{s.label} stance {g.stance if g else 'no group'}, expected {e['stance']}")
+                    got = f"{g.stance} on {g.hypothesis_id}, standing {g.without} -> {g.standing}" if g else "no group"
+                    fails.append(f"{res.id}:{s.label} stance {got}, expected {e['stance']}")
             if "not_articulated_like" in e:
                 claim = res.hypotheses.get(e["not_articulated_like"], {}).get("claim", "")
                 dup = [x.claim for x in s.groups if x.source == "articulated" and jaccard(x.claim, claim) >= 0.5]

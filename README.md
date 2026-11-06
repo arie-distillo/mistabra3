@@ -70,6 +70,7 @@ python -m testbed.run                         # every scenario end to end with t
 python -m testbed.run --live --compare --cache .cache/m.sqlite
                                               # the measurements: judged vs noisy-OR standing on identical inputs
 python -m testbed.run --live --only miss_ --only flood
+python -m testbed.run --live --jobs 8                 # scenarios in parallel (default 4)
 ```
 
 The functional tests cover all eight input patterns, scope and detail, inconsistency notes, reuse of stored

@@ -172,9 +172,31 @@ def test_counter_evidence_attaches_as_weakens(mission, op):
 def test_counter_evidence_lowers_standing(mission, op, strategy):
     ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"), traj("c2", "H_elm", 0.5, "confirmed"))})
     s = make_core(WEAKENS, standing=strategy).assess(mission, ctx, TrajectoryInput(episode=ep(HOUSE, eid="new"), risk="attack")).groups[0].standing
-    if strategy == "noisy_or":
-        assert s.value < s.without and s.delta < 0
+    assert s.value < s.without and s.delta < 0            # both strategies: counter-evidence lowers standing
     assert [u.status for u in s.used][-1] == "this"
+
+
+def test_judge_that_ignores_counter_evidence_is_damped(mission, op):
+    ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
+    over = {**WEAKENS, "standing.judge": {"value": 0.6, "rationale": "unchanged"}}   # the judge does not lower it
+    s = make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep(HOUSE, eid="new"), risk="attack")).groups[0].standing
+    assert s.without == 0.6 and s.value == 0.45            # damped by half its weight (proposed: 0.5)
+
+
+def test_supporting_episode_never_lowers_standing(mission, op):
+    ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
+    over = {"trajectory.abduce": {"relevant": True, "trajectories": [{"hypothesis_id": "H_elm", "match_confidence": 0.9, "fit": 0.6, "reach": 0.3}]},
+            "standing.judge": lambda v: {"value": 0.7 if v["previous_standing"] is None else 0.3, "rationale": "x"}}
+    s = make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0].standing
+    assert s.without == 0.7 and s.value == 0.7 and s.delta == 0.0
+
+
+def test_judge_sees_the_standing_before_this_episode(mission, op):
+    ctx = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
+    seen = []
+    over = {**WEAKENS, "standing.judge": lambda v: (seen.append(v["previous_standing"]), {"value": 0.2, "rationale": "x"})[1]}
+    make_core(over).assess(mission, ctx, TrajectoryInput(episode=ep(HOUSE, eid="new"), risk="attack"))
+    assert sorted(seen, key=lambda x: (x is not None, x)) == [None, 0.2]
 
 
 def test_supporting_trajectories_listed_before_counter_evidence(mission, op):
