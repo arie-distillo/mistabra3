@@ -226,6 +226,12 @@ class Core:
                 entries.append(_Entry(HypothesisRef(source="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
                                                     match_confidence=round(v.confidence, 3), status=h.status), v.stance, v))
             by_claim = {_norm(h.claim): h for h in known.values()}
+            for v in out.stored:   # a held hypothesis whose mechanism the evidence shows works differently: the corrected one is new
+                h, rc = known.get(v.hypothesis_id), (v.revised_claim or "").strip()
+                if h is None or not rc or _norm(rc) in by_claim or _norm(rc) in seen:
+                    continue
+                seen.add(_norm(rc))
+                entries.append(_Entry(HypothesisRef(source="articulated", claim=rc, entities=h.entities, refines=h.id), "supports", v))
             for n in out.new[: self.settings.max_trajectories]:
                 claim = (n.claim or "").strip()
                 if not claim:
@@ -333,8 +339,10 @@ class Core:
                 x = got.get(k)
                 before = a if a is not None else (_clip(x.before) if x is not None and any(i["weight"] > 0 for i in it) else 0.0)
                 raw.append((before, _clip(x.value) if x is not None else before, x.rationale if x is not None else "no judgment returned"))
-        res = []
+        res, cap = [], self.settings.unconfirmed_cap
         for (before, value, why), (t, _), it, th in zip(raw, built, items, thises):
+            if not (th["weight"] >= 1.0 or any(i["status"] == "confirmed" for i in it)):   # the layer's own proposals only
+                before, value = min(before, cap), min(value, cap)
             if t.stance == "weakens":    # the judge must lower it; if it did not, damp like the noisy-OR baseline does
                 value = value if value < before else round(before * (1 - 0.5 * th["weight"]), 3)
             else:

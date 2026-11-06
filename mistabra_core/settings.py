@@ -72,6 +72,7 @@ class Settings:
     concurrency: int = 8                    # model requests in flight at once (independent calls run in parallel)
 
     standing: str = "judged"                # judged (reasoning model weighs the attached trajectories) | noisy_or (baseline)
+    unconfirmed_cap: float = 0.8            # standing ceiling while nothing attached is confirmed by the analyst
     proposed_weight: float = 0.5            # weight of a `proposed` trajectory in standing; confirmed = 1, rejected = 0
     relevance_threshold: float = 0.5        # triage confidence needed to proceed
     match_threshold: float = 0.6            # a 'supports' verdict on a held hypothesis needs this confidence

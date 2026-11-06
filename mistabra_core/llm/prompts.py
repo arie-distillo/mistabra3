@@ -121,6 +121,7 @@ class StoredVerdict(_Assessment):
     hypothesis_id: str
     stance: Literal["supports", "weakens", "unrelated"] = "unrelated"
     confidence: float = 0.8                  # that the stance is right
+    revised_claim: str | None = None         # the corrected mechanism, when the evidence shows it works differently
 
 
 class NewHypothesis(_Assessment):
@@ -179,7 +180,7 @@ CONTENT = ("Signal content fields: actor, behaviour, target, means, time, modifi
 _SCALE = ("Use the whole scale: 0 = refuted; 0.05-0.2 = a single weak or unconfirmed indication; 0.2-0.4 = some support, ordinary "
           "explanations still as likely; 0.4-0.6 = several indications pointing the same way, ordinary explanations strained; 0.6-0.8 = "
           "strong, specific support from independent sources; 0.8-1 = confirmed by the analyst or near-certain. Proposed (unconfirmed) "
-          "trajectories alone should rarely put a hypothesis above 0.7.")
+          "trajectories alone never put a hypothesis above 0.8: that range needs confirmation by the analyst.")
 
 PROMPTS: dict[str, Prompt] = {
     "radar.derive": Prompt("radar.derive", "1", ANALYST,
@@ -199,7 +200,7 @@ PROMPTS: dict[str, Prompt] = {
         "- If relevant, content: what in the episode connects it to the risk. " + CONTENT + " why: one sentence.\n"
         "Schema: {\"relevant\":bool,\"confidence\":0-1,\"radar\":int|null,\"touches\":[str],\"why\":str,\"content\":{...}|null}",
         TriageOut, "fast"),
-    "episode.assess": Prompt("episode.assess", "2", ANALYST,
+    "episode.assess": Prompt("episode.assess", "3", ANALYST,
         "Assess the episode against the risk and the hypotheses held about it (episode -> signal -> hypothesis -> risk).\n"
         "- signal: if both INPUT signal and detected_signal are null, articulate what in the episode connects it to the risk (or to the "
         "given hypothesis) as signal content; otherwise return null. " + CONTENT + "\n"
@@ -212,21 +213,26 @@ PROMPTS: dict[str, Prompt] = {
         "a fact that is unremarkable alone can confirm the mechanism the evidence points to. \"supports\" means the episode fits that "
         "hypothesis's own mechanism. Do not stretch a held hypothesis to cover evidence that another mechanism explains more "
         "directly (e.g. registration and ownership changes are not 'layering of funds'): give it \"unrelated\" and state that "
-        "mechanism as a new hypothesis.\n"
+        "mechanism as a new hypothesis. \"weakens\" means the episode cuts against the hypothesis's core mechanism, not against a "
+        "side detail or an example in its wording.\n"
+        "  - revised_claim (on each verdict): read this episode together with the hypothesis's evidence and ask whether the mechanism "
+        "works differently from how the claim states it, in a way that matters (not merely more detail; e.g. the data left the "
+        "building on paper, not over the network). If so, write the corrected claim; otherwise null. Most of the time it is null.\n"
         "  - new: at most `max_new` hypotheses that no held one states, best first, only if the episode points to a mechanism the held "
         "ones miss. A hypothesis is a specific mechanism by which the risk comes about: name the concrete actors, systems, places and "
         "means the episode shows (e.g. 'an insider used the print server to print out the customer database', not 'IT processes are "
         "flawed'). It must make the risk MORE likely. Not hypotheses: generalisations of a held one (weak processes, poor monitoring, "
         "a broader trend), restatements of a held one (give its verdict instead), rejected claims (never restate them), and ordinary "
         "explanations (normal, routine, benign: those are baselines).\n"
-        "  - Refinement: when the episode, read together with a held hypothesis's evidence, shows that its mechanism is different in a "
-        "way that matters (not merely more detail; e.g. the data left the building on paper, not over the network), state the corrected "
-        "mechanism as a new hypothesis with refines = that held id, and still give the held one its own verdict.\n"
+        "  - Every claim (new or revised) states ONE mechanism. No hedged lists ('e.g. temperature, humidity or contamination'), no "
+        "'X or Y': pick the mechanism the evidence shows; a different one is a separate hypothesis.\n"
         "  - If `pointed` is true (the analyst pointed the episode at this risk) and the episode bears on the risk at all, return at "
         "least one supporting held or new hypothesis: a weak one is fine, standing will say how weak.\n"
         "- For every hypothesis the episode supports (given, held or new): rationale 2-4 sentences from the episode via the hypothesis "
-        "to the risk; reach: how far along the path to the risk the episode sits (0 = remote precursor, 1 = the risk itself); fit: how "
-        "well the episode supports the hypothesis on its own (raise for concealment, repetition, odd hours, tooling, explicit intent, "
+        "to the risk (here you may use the evidence); reach and fit rate THIS EPISODE ALONE, as if the listed evidence did not exist "
+        "(the evidence decides whether the episode bears on the hypothesis, never how strongly it scores: combining evidence is the "
+        "standing judgment's job): reach: how far along the path to the risk the episode sits (0 = remote precursor, 1 = the risk "
+        "itself); fit: how well the episode supports the hypothesis on its own (raise for concealment, repetition, odd hours, tooling, explicit intent, "
         "a named target; lower for a named benign role or stated purpose); missing: information that would change the assessment; "
         "baselines: the ordinary explanations of the same episode, weighed against this hypothesis: assess every baseline listed for "
         "it (assessed: baseline_id, fit, ordinary_outcome, rationale) and add new ones (new: claim, ordinary_outcome, rationale, fit) "
@@ -238,12 +244,12 @@ PROMPTS: dict[str, Prompt] = {
         "- relevant: false only if the episode bears on nothing here.\n"
         "Schema: {\"relevant\":bool,\"signal\":{...}|null,"
         "\"given\":{\"stance\":\"supports\"|\"weakens\",\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"entities\":[str],\"baselines\":B}|null,"
-        "\"stored\":[{\"hypothesis_id\":str,\"stance\":\"supports\"|\"weakens\"|\"unrelated\",\"confidence\":0-1,\"fit\":0-1,\"reach\":0-1,"
+        "\"stored\":[{\"hypothesis_id\":str,\"stance\":\"supports\"|\"weakens\"|\"unrelated\",\"confidence\":0-1,\"revised_claim\":str|null,\"fit\":0-1,\"reach\":0-1,"
         "\"rationale\":str,\"missing\":[str],\"baselines\":B}],"
-        "\"new\":[{\"claim\":str,\"refines\":str|null,\"entities\":[str],\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"baselines\":B}]} where "
+        "\"new\":[{\"claim\":str,\"entities\":[str],\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"baselines\":B}]} where "
         "B = {\"assessed\":[{\"baseline_id\":str,\"fit\":0-1,\"ordinary_outcome\":str,\"rationale\":str}],"
         "\"new\":[{\"claim\":str,\"ordinary_outcome\":str,\"rationale\":str,\"fit\":0-1}]}", AssessOut, "reasoning"),
-    "standing.judge": Prompt("standing.judge", "6", ANALYST,
+    "standing.judge": Prompt("standing.judge", "7", ANALYST,
         "For each hypothesis listed, judge its standing: how well it is supported, against its ordinary explanations (baselines), by "
         "ALL the trajectories attached to it, taken together. Give two values: `before`, from its `trajectories` alone, and `value`, "
         "with `this` (the new episode's trajectory) added. Each trajectory has a status and a weight: confirmed by the analyst "

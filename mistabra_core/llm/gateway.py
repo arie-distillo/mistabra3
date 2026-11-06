@@ -129,7 +129,7 @@ class Gateway:
             self._count("cached")
             if recorder is not None:
                 recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=True, ok=True, latency_ms=0))
-            self._log_call(task, model, user, hit, True, 0, recorder)
+            self._log_call(task, model, user, hit, True, 0, recorder, 0)
             return p.schema.model_validate_json(hit)
         out, usage, err = None, None, None
         loop = self._ensure_loop()
@@ -166,18 +166,18 @@ class Gateway:
         retries = max(0, (usage.requests or 1) - 1)
         self._count("retries", retries)
         self.cache.put(key, out.model_dump_json())
-        self._log_call(task, model, user, out.model_dump_json(), False, latency, recorder)
+        self._log_call(task, model, user, out.model_dump_json(), False, latency, recorder, retries)
         if recorder is not None:
             recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=False, ok=True, latency_ms=latency,
                                        tokens_in=usage.input_tokens, tokens_out=usage.output_tokens, retries=retries))
         return out
 
-    def _log_call(self, task, model, user, output, cached, latency, recorder):
+    def _log_call(self, task, model, user, output, cached, latency, recorder, retries=0):
         path = getattr(self.settings, "call_log", None)
         if path is None:
             return
         rec = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "episode": getattr(recorder, "label", None), "task": task, "model": model,
-               "cached": cached, "ms": latency, "prompt": user, "output": json.loads(output)}
+               "cached": cached, "ms": latency, "retries": retries, "prompt": user, "output": json.loads(output)}
         with self._lock:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as f:

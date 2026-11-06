@@ -219,6 +219,11 @@ and a hypothesis could only ever gain standing.
   matters — not merely more detail — the layer articulates the corrected mechanism as a new hypothesis with `refines` set to
   the held one's id, and still gives the held one its own verdict. Both are returned; the other layer may keep both, or retire
   the held one. A stored hypothesis keeps `refines` so the lineage is visible.
+- **Ceiling without confirmation.** While nothing attached to a hypothesis is confirmed by the analyst (and the analyst did not
+  submit this trajectory), standing stays at or below 0.8 (`unconfirmed_cap`): the upper range means confirmed, and the
+  layer's own proposals must not talk it there.
+- **Score stays isolated.** The layer shows the model a held hypothesis's evidence so that it can see whether an episode bears
+  on it, but `fit` and `reach` — and so `score` — rate the episode alone. Combining evidence is standing's job.
 
 ### 5.3 Reuse of stored hypotheses and baselines
 

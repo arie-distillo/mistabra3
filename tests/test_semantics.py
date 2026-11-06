@@ -261,3 +261,22 @@ def test_refinement_is_a_new_hypothesis_linked_to_the_held_one(mission, op):
     assert held.id == "H_centre" and held.refines is None
     new = [g.target.hypothesis for g in a.groups if g.target.hypothesis.source == "articulated"]
     assert [(h.refines) for h in new] == ["H_centre", None]           # an unknown id is dropped, not invented
+
+
+def test_revised_claim_becomes_a_refinement(mission, op):
+    over = {"episode.assess": {"stored": [{"hypothesis_id": "H_centre", "stance": "supports", "confidence": 0.9, "fit": 0.5, "reach": 0.3,
+                                           "revised_claim": "The Community Centre's side doors are being mapped for a night entry"}]}}
+    a = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOODED), risk="attack"))
+    hs = [(g.target.hypothesis.source, g.target.hypothesis.id, g.target.hypothesis.refines) for g in a.groups]
+    assert ("predefined", "H_centre", None) in hs and ("articulated", None, "H_centre") in hs
+
+
+def test_unconfirmed_standing_is_capped(mission, op):
+    over = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm", "stance": "supports", "confidence": 0.9, "fit": 0.6, "reach": 0.3}]},
+            "standing.judge": _judge(lambda h: (0.85, 0.95))}
+    proposed = op.model_copy(update={"trajectories": (traj("p1", "H_elm", 0.6, "proposed"),)})
+    s = make_core(over).assess(mission, proposed, TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0].standing
+    assert s.without == 0.8 and s.value == 0.8
+    confirmed = op.model_copy(update={"trajectories": (traj("c1", "H_elm", 0.6, "confirmed"),)})
+    s = make_core(over).assess(mission, confirmed, TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0].standing
+    assert s.value == 0.95
