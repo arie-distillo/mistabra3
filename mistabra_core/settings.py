@@ -76,6 +76,8 @@ class Settings:
     standing: str = "noisy_or"              # noisy_or (computed; default since 2026-11-06) | judged (the reasoning model weighs them)
     sharpen_after: int = 3                  # supporting facts (this episode included) before a held hypothesis is sharpened
     max_evidence: int = 6                   # facts already attached to a hypothesis shown when assessing a new episode
+    new_hypothesis_score: str = "fit"        # fit (one formula for all) | margin (option B: a hypothesis written from this
+                                            # episode is scored by its margin over the ordinary explanations and reach only)
     unconfirmed_cap: float = 0.8            # standing ceiling while nothing attached is confirmed by the analyst
     proposed_weight: float = 0.5            # weight of a `proposed` trajectory in standing; confirmed = 1, rejected = 0
     relevance_threshold: float = 0.5        # triage confidence needed to proceed
@@ -104,6 +106,7 @@ class Settings:
             failure_log=Path(e["MISTABRA_FAILURE_LOG"]) if e.get("MISTABRA_FAILURE_LOG") else None,
             concurrency=int(e.get("MISTABRA_CONCURRENCY") or 8),
             temperature=float(e.get("MISTABRA_TEMPERATURE") or 0.0),
+            new_hypothesis_score=e.get("MISTABRA_NEW_HYPOTHESIS_SCORE", "fit"),
         )
         for k, v in overrides.items():
             setattr(s, k, v)

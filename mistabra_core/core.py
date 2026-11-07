@@ -29,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .llm import Gateway, LLMAuthError, LLMError, Recorder, make_backend
 from .llm.prompts import BaselinesOut, GivenVerdict
-from .scoring import noisy_or, score_from, uses, weight_of
+from .scoring import score_margin, noisy_or, score_from, uses, weight_of
 from .settings import Settings
 from .types import (AssessedTrajectory, Assessment, AssessmentGroup, Episode, Hypothesis, HypothesisDraft, HypothesisRef,
                     MissionContext, OperationalContext, Provenance, Risk, RiskRef, SignalContent, SignalOut, Standing,
@@ -332,7 +332,11 @@ class Core:
             fit, reach, score = round(min(v.fit, 0.3), 3), 0.0, 0.0
         else:
             best_b = max((b.fit for b in baselines), default=0.0)
-            score = score_from(reach, fit, fit - best_b, signal.content.specificity, ep.credibility)
+            tailored = e.href.origin == "articulated" and not e.href.refines   # written from this episode alone
+            if tailored and self.settings.new_hypothesis_score == "margin":
+                score = score_margin(reach, fit - best_b, signal.content.specificity, ep.credibility)
+            else:
+                score = score_from(reach, fit, fit - best_b, signal.content.specificity, ep.credibility)
         target = AssessedTrajectory(episode_id=ep.id, role="primary", signal=signal, hypothesis=e.href, risk=rref, score=score,
                                     reach=reach, fit=fit, missing=tuple(v.missing), rationale=v.rationale, stance=e.stance)
         return target, baselines

@@ -354,3 +354,18 @@ def test_a_stored_refinement_counts_its_parents_evidence(mission, op):
     g = make_core(over, standing="noisy_or").assess(mission, _with_facts(op, 2, [child]),
                                                     TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0]
     assert g.target.hypothesis.id == "H_elm2" and g.standing.without > 0 and len(g.standing.used) == 3
+
+
+# ---------------------------------------------------------------- option B: margin score for tailored hypotheses
+def test_margin_score_applies_only_to_a_hypothesis_written_from_this_episode(mission, op):
+    from mistabra_core.scoring import score_from, score_margin
+    assert score_margin(0.6, 0.45, 1.0, 1.0) < score_from(0.6, 0.85, 0.45, 1.0, 1.0)
+    new = {"episode.assess": {"new": [{"claim": "A new tailored claim about Elm Street", "fit": 0.9, "reach": 0.4,
+                                       "baselines": {"new": [{"claim": "an estate agent", "fit": 0.5}]}}]}}
+    held = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm", "stance": "supports", "confidence": 0.9, "fit": 0.9, "reach": 0.4,
+                                           "baselines": {"new": [{"claim": "an estate agent", "fit": 0.5}]}}]}}
+    a_fit = make_core(new).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack")).groups[0].target.score
+    a_mar = make_core(new, new_hypothesis_score="margin").assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack")).groups[0].target.score
+    h_fit = make_core(held).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack")).groups[0].target.score
+    h_mar = make_core(held, new_hypothesis_score="margin").assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack")).groups[0].target.score
+    assert a_mar < a_fit and h_mar == h_fit                  # a matched hypothesis keeps the one formula

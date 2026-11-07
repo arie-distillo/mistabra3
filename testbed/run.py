@@ -5,6 +5,7 @@
     python -m testbed.run --live --compare        # noisy-OR standing (default) vs model-judged standing, same inputs
     python -m testbed.run --only miss_ --only conj_01
     python -m testbed.run --live --cache .cache/mistabra.sqlite   # re-runs reuse model outputs
+    python -m testbed.run --live --compare --compare-score   # + noisy-OR with option B scoring of new hypotheses
     python -m testbed.run --live --repeat 3       # three independent runs (run 1 may reuse the cache), mean / min / max per metric
     python -m testbed.run --live --jobs 8         # scenarios in parallel (default 4); steps within a scenario stay in order
 
@@ -81,7 +82,9 @@ def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4, loo
     from . import grader
     grade = grader.lexical() if core.provider.name == "fake" else grader.model(core.gw)
     metrics = all_metrics([r for r in results if r is not None and r.error is None], grade=grade)
+    label = settings.standing + (" + margin score" if settings.new_hypothesis_score == "margin" else "")
     return {"settings": {"provider": core.provider.name, "model": settings.model, "fast_model": settings.fast_model, "standing": settings.standing,
+                         "new_hypothesis_score": settings.new_hypothesis_score, "label": label,
                          "proposed_weight": settings.proposed_weight}, "llm": dict(core.gw.stats), "seconds": round(time.time() - t0, 1),
             "metrics": metrics, "scenarios": [asdict(r) for r in results]}
 
@@ -90,7 +93,7 @@ def markdown(reports: list[dict]) -> str:
     out = ["# Mistabra Core — testbed report", ""]
     for r in reports:
         s = r["settings"]
-        out.append(f"- **{s['standing']}** standing: provider `{s['provider']}`, model `{s['model']}`, fast `{s['fast_model']}`; "
+        out.append(f"- **{s.get('label', s['standing'])}** standing: provider `{s['provider']}`, model `{s['model']}`, fast `{s['fast_model']}`; "
                    f"{r['llm']['calls']} model calls, {r['llm']['cached']} cached, {r['llm'].get('retries', 0)} validation retries, "
                    f"{r['llm']['errors']} errors, "
                    f"{sum(1 for x in r['scenarios'] for st in x['steps'] if st.get('error'))} episodes skipped, "
@@ -98,7 +101,7 @@ def markdown(reports: list[dict]) -> str:
                    f"earlier episodes re-attached by look-back, {r['seconds']} s")
     if reports and reports[0]["settings"]["provider"] == "fake":
         out += ["", "> Fake provider: these numbers prove the plumbing, not the method. Run with `--live` for measurements."]
-    out += ["", "| Metric | " + " | ".join(r["settings"]["standing"] for r in reports) + " |", "| --- |" + " --- |" * len(reports)]
+    out += ["", "| Metric | " + " | ".join(r["settings"].get("label", r["settings"]["standing"]) for r in reports) + " |", "| --- |" + " --- |" * len(reports)]
     for sec, key, label in HEADLINE:
         out.append(f"| {sec.split('_')[0]} {label} | " + " | ".join(str(r["metrics"][sec].get(key)) for r in reports) + " |")
     m = reports[0]["metrics"]
@@ -123,7 +126,7 @@ def markdown(reports: list[dict]) -> str:
 def spread(runs: list[list[dict]]) -> str:
     """Run-to-run spread of the headline metrics: mean, min, max and every value, per standing mode."""
     out = [f"# Run-to-run spread ({len(runs)} runs)", ""]
-    modes = [r["settings"]["standing"] for r in runs[0]]
+    modes = [r["settings"].get("label", r["settings"]["standing"]) for r in runs[0]]
     out += ["| Metric | " + " | ".join(f"{m}: mean [min, max] (values)" for m in modes) + " |", "| --- |" + " --- |" * len(modes)]
     for sec, key, label in HEADLINE:
         cells = []
@@ -143,6 +146,8 @@ def main(argv=None) -> int:
     ap.add_argument("--only", action="append", default=[], help="run scenarios whose id contains this text (repeatable)")
     ap.add_argument("--cache", help="SQLite file caching model outputs across runs")
     ap.add_argument("--jobs", type=int, default=4, help="scenarios run in parallel (default 4)")
+    ap.add_argument("--compare-score", action="store_true",
+                    help="also run with new hypotheses scored by margin over ordinary explanations (option B)")
     ap.add_argument("--no-lookback", action="store_true", help="do not re-submit earlier unattached episodes against new hypotheses")
     ap.add_argument("--repeat", type=int, default=1, help="independent runs (fresh cache entries after the first): run-to-run spread")
     ap.add_argument("--temperature", type=float, default=None, help="sampling temperature (default MISTABRA_TEMPERATURE or 0)")
@@ -173,17 +178,20 @@ def main(argv=None) -> int:
         over["call_log"] = calls                           # every model call, with prompt and output: the "why" behind the report
     if a.temperature is not None:
         over["temperature"] = a.temperature
-    modes = ["noisy_or", "judged"] if a.compare else [a.standing or os.environ.get("MISTABRA_STANDING", "noisy_or")]
+    base = a.standing or os.environ.get("MISTABRA_STANDING", "noisy_or")
+    modes = [{"standing": "noisy_or"}, {"standing": "judged"}] if a.compare else [{"standing": base}]
+    if a.compare_score:   # option B for hypotheses written from a single episode, on the same model answers (score is computed)
+        modes.append({"standing": modes[0]["standing"], "new_hypothesis_score": "margin"})
     runs = []
     for i in range(max(1, a.repeat)):
         if a.repeat > 1:
             print(f"=== repeat {i + 1}/{a.repeat}")
         salt = {"cache_salt": f"repeat{i}"} if i else {}
-        runs.append([run({**over, **salt, "standing": m}, a.only, jobs=a.jobs, lookback=not a.no_lookback) for m in modes])
+        runs.append([run({**over, **salt, **m}, a.only, jobs=a.jobs, lookback=not a.no_lookback) for m in modes])
     reports = runs[0]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    tag = f"{stamp}-{reports[0]['settings']['provider']}-{'compare' if a.compare else modes[0]}{f'-x{a.repeat}' if a.repeat > 1 else ''}"
+    tag = f"{stamp}-{reports[0]['settings']['provider']}-{'compare' if a.compare or a.compare_score else modes[0]['standing']}{f'-x{a.repeat}' if a.repeat > 1 else ''}"
     (out / f"{tag}.json").write_text(json.dumps(runs if a.repeat > 1 else reports, indent=1, default=str), encoding="utf-8")
     md = markdown(reports) if a.repeat == 1 else spread(runs) + "\n" + markdown(reports)
     (out / f"{tag}.md").write_text(md, encoding="utf-8")
