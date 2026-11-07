@@ -31,8 +31,8 @@ class Out(BaseModel):
             out = {}
             for k, v in data.items():
                 if isinstance(v, str) and k in cls.model_fields and not _is_str_field(cls, k):
-                    if not v.strip():
-                        continue                      # "" for an object / list / number: not given, use the default
+                    if not v.strip() or v.strip().lower() in ("none", "null"):
+                        continue                      # "", "None", "null" for an object / list / number: not given, use the default
                     if v.strip()[:1] in ("{", "["):
                         v = _loads(v)
                 out[k] = v
@@ -107,6 +107,18 @@ class BaselineNew(Out):
 class BaselinesOut(Out):
     assessed: list[BaselineAssessed] = Field(default_factory=list)
     new: list[BaselineNew] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_list(cls, data):
+        """Qwen often sends baselines as a bare list ([] for none): sort its items into assessed (they name a stored
+        baseline_id) and new (they carry a claim). This was the cause of most validation retries on 2026-11-07."""
+        if isinstance(data, str) and data.strip()[:1] == "[":
+            data = _loads(data)
+        if isinstance(data, list):
+            items = [x for x in data if isinstance(x, dict)]
+            return {"assessed": [x for x in items if x.get("baseline_id")], "new": [x for x in items if not x.get("baseline_id") and x.get("claim")]}
+        return data
 
 
 class _Assessment(Out):

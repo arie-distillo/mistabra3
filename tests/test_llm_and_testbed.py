@@ -289,3 +289,25 @@ def test_call_log_records_why_answers_were_sent_back(tmp_path):
     g.call("radar.derive", {"risk_text": "r"})
     row = _j.loads(log.read_text(encoding="utf-8").splitlines()[0])
     assert row["retries"] == 1 and row["retry_reasons"] and "radars" in row["retry_reasons"][0]
+
+
+def test_baselines_as_a_bare_list_and_none_strings_are_accepted():
+    from mistabra_core.llm.prompts import AssessOut
+    out = AssessOut.model_validate({"given": "None", "stored": [
+        {"hypothesis_id": "H1", "stance": "supports", "baselines": []},
+        {"hypothesis_id": "H2", "stance": "supports", "baselines": [{"baseline_id": "B1", "fit": 0.4}, {"claim": "routine work", "fit": 0.6}]}]})
+    assert out.given is None and out.stored[0].baselines.assessed == [] and out.stored[0].baselines.new == []
+    assert [b.baseline_id for b in out.stored[1].baselines.assessed] == ["B1"] and out.stored[1].baselines.new[0].claim == "routine work"
+
+
+def test_sharpening_the_analysts_hypothesis_is_not_a_false_alarm_in_a_control():
+    from testbed.harness import ScenarioResult
+    from testbed.metrics import a2_lambda
+    res = ScenarioResult(id="c", kind="miss", control=True, hypotheses={
+        "G1": {"claim": "undercooked chicken", "lambda": False, "origin": "analyst", "status": "open", "standing": 0.6, "refines": None},
+        "N1": {"claim": "Campylobacter in chicken undercooked on grill 2", "lambda": True, "origin": "system", "status": "proposed",
+               "standing": 0.7, "refines": "G1"},
+        "N2": {"claim": "a new cause", "lambda": True, "origin": "system", "status": "proposed", "standing": 0.3, "refines": None}})
+    assert a2_lambda([res])["control_false_alarm"] == 0.0
+    res.hypotheses["N2"]["standing"] = 0.6
+    assert a2_lambda([res])["control_false_alarm"] == 1.0

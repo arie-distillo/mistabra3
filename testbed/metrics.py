@@ -141,7 +141,11 @@ def a2_lambda(results: list[ScenarioResult], established: float = 0.5, grade=Non
             targets = [t for t in [res.final.get("missing"), *res.final.get("alternatives", [])] if t]
             lam = [h for h in res.hypotheses.values() if h["lambda"]]
             if res.control:
-                fa = [h for h in lam if (h["standing"] or 0) >= established]
+                # sharpening the analyst's own hypothesis (a refinement whose root is analyst-given) is not a new cause
+                def root(h, hops=0):
+                    parent = res.hypotheses.get(h.get("refines") or "")
+                    return root(parent, hops + 1) if parent is not None and hops < 10 else h
+                fa = [h for h in lam if (h["standing"] or 0) >= established and root(h)["origin"] != "analyst"]
                 false_alarm.append(bool(fa))
                 if fa:
                     fails.append(f"{res.id} (control): Lambda hypothesis established: {fa[0]['claim']}")
