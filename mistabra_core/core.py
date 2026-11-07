@@ -254,6 +254,7 @@ class Core:
                 entries.append(_Entry(HypothesisRef(source="articulated", claim=claim, entities=tuple(n.entities),
                                                     refines=n.refines if n.refines in known else None), "supports", n))
             entries = [e for e in entries if include_rejected or e.href.status != "rejected"]
+            entries += self._sharpen(op, ep, risk, known, entries, seen, run)
             if not entries:
                 return []
         if signal is None:   # pointed at by the analyst, triage did not see a signal: the layer articulates it
@@ -269,6 +270,39 @@ class Core:
         anchors = [h.standing if e.href.id and (h := op.hypothesis(e.href.id)) is not None else None for e in entries]
         standings = self._standings(ti, risk, built, items, anchors, run)
         return [AssessmentGroup(target=t, baselines=tuple(b), standing=st) for (t, b), st in zip(built, standings)]
+
+    # ---------------------------------------------------------------- sharpening
+    def _sharpen(self, op: OperationalContext, ep: Episode, risk: Risk, known: dict, entries: list, seen: set, run: _Run) -> list:
+        """A held hypothesis that this episode supports and that now has `sharpen_after` supporting facts gets one question:
+        do the facts together show a more specific mechanism? Live runs showed the model articulates a hypothesis from the
+        first facts and then attaches every later, more telling fact to it unchanged ("a chemical leak near Mill Road"
+        absorbed the plant's overdue backflow test and the pressure drops); an optional revised claim in the assessment
+        was used 2 times in 799 verdicts. A sharper claim becomes a new hypothesis that refines the held one and inherits
+        its evidence (spec §5.2b). Hypotheses that already have a refinement are not asked again."""
+        refined = {h.refines for h in known.values() if h.refines}
+        cands = []
+        for e in entries:
+            h = known.get(e.href.id or "")
+            if h is None or e.stance != "supports" or h.id in refined or h.status == "rejected":
+                continue
+            facts = [t for t in op.attached(h.id) if t.stance == "supports" and t.status != "rejected" and t.episode_id != ep.id]
+            if len(facts) + 1 >= self.settings.sharpen_after:
+                cands.append((e, h, facts))
+
+        def ask(c):
+            e, h, facts = c
+            return self.gw.call("hypothesis.sharpen", {
+                "risk_text": risk.text, "claim": h.claim,
+                "facts": [{"summary": t.signal.summary, "rationale": t.rationale} for t in facts[-self.settings.max_evidence:]]
+                         + [{"new": True, "episode": ep.text, "rationale": e.verdict.rationale}]}, recorder=run.rec)
+        out = []
+        for (e, h, _), r in zip(cands, _pmap(ask, cands)):
+            claim = (r.sharper_claim or "").strip()
+            if not claim or _norm(claim) in seen or any(_norm(claim) == _norm(k.claim) for k in known.values()):
+                continue
+            seen.add(_norm(claim))
+            out.append(_Entry(HypothesisRef(source="articulated", claim=claim, entities=h.entities, refines=h.id), "supports", e.verdict))
+        return out
 
     # ---------------------------------------------------------------- one target
     def _target(self, ep: Episode, signal: SignalOut, rref: RiskRef, e: "_Entry", stored_b: list[Hypothesis]):
@@ -305,8 +339,15 @@ class Core:
 
     # ---------------------------------------------------------------- standing
     def _attached_items(self, op: OperationalContext, ti: TrajectoryInput, href: HypothesisRef, run: _Run) -> list[dict]:
+        """Trajectories that count toward a hypothesis's standing. A refinement inherits its parent's: the facts that made
+        the layer sharpen the claim support the sharper claim too (spec §5.2b)."""
         pw = self.settings.proposed_weight
-        attached = op.attached(href.id)[-self.settings.max_attached:] if href.id else []
+        own = op.attached(href.id) if href.id else []
+        h = op.hypothesis(href.id) if href.id else None
+        parent = href.refines or (h.refines if h is not None else None)
+        mine = {t.episode_id for t in own}
+        inherited = [t for t in op.attached(parent) if t.episode_id not in mine] if parent else []
+        attached = (inherited + list(own))[-self.settings.max_attached:]
         attached = [t for t in attached if t.episode_id != ti.episode.id]   # re-assessing an episode replaces its own trajectory
         run.saw(*attached)
         return [{"id": t.id, "status": t.status, "stance": t.stance, "weight": weight_of(t.status, pw), "score": t.score, "fit": t.fit,

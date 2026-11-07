@@ -143,6 +143,11 @@ class AssessOut(Out):
     new: list[NewHypothesis] = Field(default_factory=list)
 
 
+class SharpenOut(Out):
+    sharper_claim: str | None = None
+    why: str = ""
+
+
 class StandingItem(Out):
     key: str
     before: float = 0.0
@@ -257,6 +262,14 @@ PROMPTS: dict[str, Prompt] = {
         "\"new\":[{\"claim\":str,\"entities\":[str],\"fit\":0-1,\"reach\":0-1,\"rationale\":str,\"missing\":[str],\"baselines\":B}]} where "
         "B = {\"assessed\":[{\"baseline_id\":str,\"fit\":0-1,\"ordinary_outcome\":str,\"rationale\":str}],"
         "\"new\":[{\"claim\":str,\"ordinary_outcome\":str,\"rationale\":str,\"fit\":0-1}]}", AssessOut, "reasoning"),
+    "hypothesis.sharpen": Prompt("hypothesis.sharpen", "1", ANALYST,
+        "A hypothesis has gathered several supporting facts; the last one is new. Read the claim and the facts together and ask: do "
+        "they show the mechanism more specifically than the claim states (who or what is involved, through which route, by which "
+        "means), or show that it works differently? A vague claim ('a chemical leak near Mill Road', 'a vulnerability in the "
+        "software') usually can be sharpened once several facts are in. If so, write the sharper claim: ONE mechanism, naming the "
+        "actors, systems, routes and means the facts show, and nothing the facts do not support. If the claim already says what the "
+        "facts show, return null. why: one sentence naming the facts that make it sharper. "
+        "Schema: {\"sharper_claim\":str|null,\"why\":str}", SharpenOut, "reasoning"),
     "standing.judge": Prompt("standing.judge", "9", ANALYST,
         "For each hypothesis listed, judge its standing: how well it is supported, against its ordinary explanations (baselines), by "
         "ALL the trajectories attached to it, taken together. Give two values: `before`, from its `trajectories` alone, and `value`, "

@@ -57,6 +57,8 @@ hypotheses do not change):
    it answer? An irrelevant episode stops here, after one call.
 2. `episode.assess` (reasoning tier) — a verdict on every held hypothesis (supports / weakens / unrelated), new
    hypotheses only for mechanisms the held ones miss, and the ordinary explanations (baselines) of each.
+   If a supported held hypothesis now has 3 supporting facts and no refinement yet, `hypothesis.sharpen` (reasoning
+   tier) asks whether the facts together show a more specific mechanism; a sharper claim becomes a refinement.
 3. Standing of every hypothesis the episode touched, before and after it: computed (noisy-OR with the safeguards of
    spec §5.2a–b; the default) or, with `MISTABRA_STANDING=judged`, one `standing.judge` call (reasoning tier).
 

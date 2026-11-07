@@ -313,3 +313,43 @@ def test_default_standing_is_noisy_or_and_makes_no_standing_call(mission, op):
     assert core.settings.standing == "noisy_or"
     a = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack"))
     assert a.groups and "standing.judge" not in {c.task for c in a.provenance.calls}
+
+
+# ---------------------------------------------------------------- sharpening
+SUPPORTS_ELM = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm", "stance": "supports", "confidence": 0.9, "fit": 0.6, "reach": 0.3}]}}
+
+
+def _with_facts(op, n, extra_hyps=()):
+    return op.model_copy(update={"hypotheses": op.hypotheses + tuple(extra_hyps),
+                                 "trajectories": tuple(traj(f"p{i}", "H_elm", 0.4, "proposed") for i in range(n))})
+
+
+def test_held_hypothesis_with_enough_facts_is_sharpened_and_the_refinement_inherits_them(mission, op):
+    seen = []
+    over = {**SUPPORTS_ELM, "hypothesis.sharpen": lambda d: (seen.append(d), {"sharper_claim": "A named group is mapping Elm Street homes "
+                                                                                                 "from a parked van at night", "why": "x"})[1]}
+    a = make_core(over, standing="noisy_or").assess(mission, _with_facts(op, 2), TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack"))
+    assert len(seen) == 1 and len(seen[0]["facts"]) == 3 and seen[0]["facts"][-1]["new"]
+    ref = next(g for g in a.groups if g.target.hypothesis.refines == "H_elm")
+    held = next(g for g in a.groups if g.target.hypothesis.id == "H_elm")
+    assert ref.target.hypothesis.source == "articulated" and ref.target.lambda_hypothesis
+    assert ref.standing.without == held.standing.without > 0          # same inherited evidence
+
+
+def test_too_few_facts_or_an_existing_refinement_means_no_sharpening(mission, op):
+    from mistabra_core.types import Hypothesis
+    calls = []
+    over = {**SUPPORTS_ELM, "hypothesis.sharpen": lambda d: (calls.append(d), {"sharper_claim": "x y z"})[1]}
+    make_core(over).assess(mission, _with_facts(op, 1), TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack"))
+    child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", origin="system", refines="H_elm")
+    make_core(over).assess(mission, _with_facts(op, 3, [child]), TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack"))
+    assert calls == []
+
+
+def test_a_stored_refinement_counts_its_parents_evidence(mission, op):
+    from mistabra_core.types import Hypothesis
+    child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", origin="system", status="proposed", refines="H_elm")
+    over = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm2", "stance": "supports", "confidence": 0.9, "fit": 0.6, "reach": 0.3}]}}
+    g = make_core(over, standing="noisy_or").assess(mission, _with_facts(op, 2, [child]),
+                                                    TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0]
+    assert g.target.hypothesis.id == "H_elm2" and g.standing.without > 0 and len(g.standing.used) == 3

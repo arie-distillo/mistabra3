@@ -74,6 +74,7 @@ class Settings:
     concurrency: int = 8                    # model requests in flight at once (independent calls run in parallel)
 
     standing: str = "noisy_or"              # noisy_or (computed; default since 2026-11-06) | judged (the reasoning model weighs them)
+    sharpen_after: int = 3                  # supporting facts (this episode included) before a held hypothesis is sharpened
     max_evidence: int = 6                   # facts already attached to a hypothesis shown when assessing a new episode
     unconfirmed_cap: float = 0.8            # standing ceiling while nothing attached is confirmed by the analyst
     proposed_weight: float = 0.5            # weight of a `proposed` trajectory in standing; confirmed = 1, rejected = 0

@@ -275,3 +275,17 @@ def test_a_failed_episode_is_skipped_not_the_scenario():
                        log=lambda *_: None)
     assert len(res.steps) == len(sc.steps) and res.error is None
     assert [s.label for s in res.steps if s.error] == [sc.steps[3].label]
+
+
+def test_call_log_records_why_answers_were_sent_back(tmp_path):
+    import json as _j
+    state = {"n": 0}
+
+    def flaky(d):
+        state["n"] += 1
+        return {"radars": [42]} if state["n"] == 1 else {"radars": [{"query": "someone watches a building"}]}
+    log = tmp_path / "calls.jsonl"
+    g = Gateway(Settings(force_fake=True, call_log=log), FakeProvider({"radar.derive": flaky}))
+    g.call("radar.derive", {"risk_text": "r"})
+    row = _j.loads(log.read_text(encoding="utf-8").splitlines()[0])
+    assert row["retries"] == 1 and row["retry_reasons"] and "radars" in row["retry_reasons"][0]

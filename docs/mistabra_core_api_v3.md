@@ -219,6 +219,10 @@ and a hypothesis could only ever gain standing.
   matters — not merely more detail — the layer articulates the corrected mechanism as a new hypothesis with `refines` set to
   the held one's id, and still gives the held one its own verdict. Both are returned; the other layer may keep both, or retire
   the held one. A stored hypothesis keeps `refines` so the lineage is visible.
+- **Sharpening.** Once a held hypothesis has `sharpen_after` (3) supporting facts including this episode, and has no
+  refinement yet, the layer asks one question: do the facts together show a more specific mechanism than the claim states?
+  A sharper claim is returned as a refinement. A refinement's standing counts its parent's trajectories as well as its own:
+  the facts that made the layer sharpen the claim support it too.
 - **Neutral.** When the analyst gives a hypothesis and the episode does not bear on it, the group is still returned (the
   analyst asked) with `stance: neutral`, `score` 0 and standing unchanged; standing ignores neutral trajectories. Before this,
   the only answers were supports or weakens, and routine details were forced into counter-evidence.
