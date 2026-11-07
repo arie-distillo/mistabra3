@@ -200,13 +200,17 @@ _SCALE = ("Use the whole scale: 0 = refuted; 0.05-0.2 = a single weak or unconfi
           "trajectories alone never put a hypothesis above 0.8: that range needs confirmation by the analyst.")
 
 PROMPTS: dict[str, Prompt] = {
-    "radar.derive": Prompt("radar.derive", "1", ANALYST,
-        "Given a risk, domain context and the hypotheses currently held about it, write 3-6 radars. A radar is a query that decides "
-        "whether an episode (a short text report) is relevant to the risk and asks for something specific to extract. Each query is one "
-        "or two sentences, concrete, and covers a distinct kind of precursor or observable. "
-        "Schema: {\"radars\":[{\"query\":str}]}", RadarsOut, "reasoning"),
-    "episode.triage": Prompt("episode.triage", "1", ANALYST,
-        "Decide whether the episode bears on the risk, directly or through one of the hypotheses currently held about it.\n"
+    "radar.derive": Prompt("radar.derive", "2", ANALYST,
+        "Given a risk and domain context, write 5-8 radars. A radar is a query that decides whether an episode (a short text "
+        "report) is relevant to the risk and asks for something specific to extract. Each query is one or two sentences, concrete, "
+        "and covers a distinct route by which the risk could come about or a distinct kind of precursor or observable. Cover the "
+        "whole range, including unconventional and indirect routes (equipment, suppliers, contractors, software and updates, "
+        "insiders, paperwork, physical access), not only the obvious ones: the radars are what keeps the analysis from looking "
+        "only where it already looks. Schema: {\"radars\":[{\"query\":str}]}", RadarsOut, "reasoning"),
+    "episode.triage": Prompt("episode.triage", "2", ANALYST,
+        "Decide whether the episode bears on the risk, directly or through one of the hypotheses currently held about it. Judge it "
+        "against the risk first, as if no hypothesis were held: the held hypotheses can make an episode relevant, never make it "
+        "irrelevant, and an episode that points to a route none of them covers is exactly what must not be missed.\n"
         "- Judge the episode in the light of the held hypotheses and their evidence: a fact that is unremarkable on its own (a device "
         "update, a printer running at night, a budget line) is relevant when it confirms, extends or contradicts the mechanism a held "
         "hypothesis proposes.\n"

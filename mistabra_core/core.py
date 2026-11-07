@@ -10,7 +10,7 @@ Flow per candidate risk, three model calls:
   2. episode.assess (reasoning): a verdict on every held hypothesis (supports | weakens | unrelated), new hypotheses
      only for mechanisms the held ones miss, and for each supported hypothesis its ordinary explanations (baselines).
   3. standing.judge (reasoning): every hypothesis the episode touched, judged together, before and after this episode.
-Then score (formula, the episode alone) and provenance. radar.derive runs once per state of the held hypotheses.
+Then score (formula, the episode alone) and provenance. radar.derive runs once per mission version and risk.
 
 Candidate risks are assessed in parallel; results are combined in a fixed order, so parallelism never changes an
 answer.
@@ -136,19 +136,19 @@ class Core:
             r = mission.risk(ti.risk)
             if r is None:
                 raise KeyError(f"risk {ti.risk!r} is not in the mission context")
-            risks, risk_source = [r], "given"
+            risks, risk_origin = [r], "given"
             if given_h is not None and given_h.risk_id != r.id:
                 inconsistency = f"hypothesis {given_h.id} belongs to risk {given_h.risk_id}, not to the given risk {r.id}"
         elif given_h is not None:
             r = mission.risk(given_h.risk_id)
             if r is None:
                 raise KeyError(f"hypothesis {given_h.id} refers to risk {given_h.risk_id!r}, which is not in the mission context")
-            risks, risk_source = [r], "predefined"
+            risks, risk_origin = [r], "predefined"
         else:
-            risks, risk_source = list(mission.active_risks), "predefined"
+            risks, risk_origin = list(mission.active_risks), "predefined"
 
         pointed = ti.hypothesis is not None or ti.risk is not None
-        candidates = [g for gs in _pmap(lambda risk: self._for_risk(mission, op, ti, risk, risk_source, given_h, given_claim, pointed,
+        candidates = [g for gs in _pmap(lambda risk: self._for_risk(mission, op, ti, risk, risk_origin, given_h, given_claim, pointed,
                                                                      run, include_rejected), risks) for g in gs]
 
         if given_claim is not None and not given_h and len(risks) > 1 and candidates:
@@ -156,11 +156,11 @@ class Core:
             candidates = [max(candidates, key=lambda g: (g.target.fit * (0.5 + g.target.reach), g.target.score))]
         if inconsistency:
             candidates = [g.model_copy(update={"inconsistency": inconsistency}) for g in candidates]
-        given_first = sorted(candidates, key=lambda g: (g.target.hypothesis.source != "given", -g.target.score))
+        given_first = sorted(candidates, key=lambda g: (g.target.hypothesis.origin != "given", -g.target.score))
         return given_first
 
     # ---------------------------------------------------------------- one risk
-    def _for_risk(self, mission, op: OperationalContext, ti: TrajectoryInput, risk: Risk, risk_source, given_h, given_claim,
+    def _for_risk(self, mission, op: OperationalContext, ti: TrajectoryInput, risk: Risk, risk_origin, given_h, given_claim,
                   pointed: bool, run: _Run, include_rejected: bool) -> list[AssessmentGroup]:
         ep = ti.episode
         ctx = self._snippets(mission, ep.text + " " + risk.text, 4)
@@ -170,7 +170,7 @@ class Core:
 
         # 1. triage → signal
         if ti.signal is not None:
-            signal = SignalOut(content=ti.signal.content or SignalContent(summary=ti.signal.note), source="given")
+            signal = SignalOut(content=ti.signal.content or SignalContent(summary=ti.signal.note), origin="given")
         else:
             queries = self._radar_queries(mission, op, risk, run)
             tr = self.gw.call("episode.triage", {
@@ -183,7 +183,7 @@ class Core:
             signal = None
             if relevant:
                 radar = queries[tr.radar] if tr.radar is not None and 0 <= tr.radar < len(queries) else None
-                signal = SignalOut(content=SignalContent(**self._content(tr.content)), source="predefined" if radar else "articulated",
+                signal = SignalOut(content=SignalContent(**self._content(tr.content)), origin="predefined" if radar else "articulated",
                                    radar=radar)
 
         # 2. assess: verdicts on held hypotheses, new ones, baselines
@@ -202,7 +202,7 @@ class Core:
             "risk_text": risk.text, "context": ctx, "pointed": pointed,
             "episode": {"text": ep.text, "source": ep.source, "credibility": ep.credibility, "occurred": ep.occurred},
             "signal": None if ti.signal is None else ({**ti.signal.content.model_dump(), "note": ti.signal.note} if ti.signal.content else {"note": ti.signal.note}),
-            "detected_signal": None if signal is None or signal.source == "given" else signal.content.model_dump(),
+            "detected_signal": None if signal is None or signal.origin == "given" else signal.content.model_dump(),
             "given_hypothesis": None if given_claim is None else {
                 "claim": given_claim, "evidence": evidence(given_h.id) if given_h else [],
                 "baselines": [{"id": b.id, "claim": b.claim} for b in baselines_of.get(given_h.id if given_h else "", [])]},
@@ -215,8 +215,8 @@ class Core:
         entries: list[_Entry] = []
         if given_claim is not None:
             v = out.given or GivenVerdict(rationale="The model returned no assessment of the given hypothesis.")
-            href = (HypothesisRef(source="given", id=given_h.id, version=given_h.version, claim=given_h.claim, entities=given_h.entities,
-                                  status=given_h.status) if given_h else HypothesisRef(source="given", claim=given_claim, entities=tuple(v.entities)))
+            href = (HypothesisRef(origin="given", id=given_h.id, version=given_h.version, claim=given_h.claim, entities=given_h.entities,
+                                  status=given_h.status) if given_h else HypothesisRef(origin="given", claim=given_claim, entities=tuple(v.entities)))
             entries.append(_Entry(href, "neutral" if v.stance == "unrelated" else v.stance, v))   # the analyst asked: always answered
         else:
             seen = set()
@@ -227,7 +227,7 @@ class Core:
                 if v.stance == "supports" and v.confidence < self.settings.match_threshold:
                     continue
                 seen.add(h.id)
-                entries.append(_Entry(HypothesisRef(source="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
+                entries.append(_Entry(HypothesisRef(origin="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
                                                     match_confidence=round(v.confidence, 3), status=h.status), v.stance, v))
             by_claim = {_norm(h.claim): h for h in known.values()}
             for v in out.stored:   # a held hypothesis whose mechanism the evidence shows works differently: the corrected one is new
@@ -235,7 +235,7 @@ class Core:
                 if h is None or not rc or _norm(rc) in by_claim or _norm(rc) in seen:
                     continue
                 seen.add(_norm(rc))
-                entries.append(_Entry(HypothesisRef(source="articulated", claim=rc, entities=h.entities, refines=h.id), "supports", v))
+                entries.append(_Entry(HypothesisRef(origin="articulated", claim=rc, entities=h.entities, refines=h.id), "supports", v))
             for n in out.new[: self.settings.max_trajectories]:
                 claim = (n.claim or "").strip()
                 if not claim:
@@ -245,13 +245,13 @@ class Core:
                     if h.id in seen:
                         continue
                     seen.add(h.id)
-                    entries.append(_Entry(HypothesisRef(source="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
+                    entries.append(_Entry(HypothesisRef(origin="predefined", id=h.id, version=h.version, claim=h.claim, entities=h.entities,
                                                         match_confidence=1.0, status=h.status), "supports", n))
                     continue
                 if _norm(claim) in seen:
                     continue
                 seen.add(_norm(claim))
-                entries.append(_Entry(HypothesisRef(source="articulated", claim=claim, entities=tuple(n.entities),
+                entries.append(_Entry(HypothesisRef(origin="articulated", claim=claim, entities=tuple(n.entities),
                                                     refines=n.refines if n.refines in known else None), "supports", n))
             entries = [e for e in entries if include_rejected or e.href.status != "rejected"]
             entries += self._sharpen(op, ep, risk, known, entries, seen, run)
@@ -259,12 +259,12 @@ class Core:
                 return []
         if signal is None:   # pointed at by the analyst, triage did not see a signal: the layer articulates it
             signal = SignalOut(content=SignalContent(**self._content(out.signal)) if out.signal else SignalContent(summary=ep.text[:140]),
-                               source="articulated")
-        elif signal.source == "articulated" and out.signal is not None:
-            signal = SignalOut(content=SignalContent(**self._content(out.signal)), source="articulated")
+                               origin="articulated")
+        elif signal.origin == "articulated" and out.signal is not None:
+            signal = SignalOut(content=SignalContent(**self._content(out.signal)), origin="articulated")
 
         # 3. targets and baselines, then one standing call for all of them
-        rref = RiskRef(risk_id=risk.id, source=risk_source)
+        rref = RiskRef(risk_id=risk.id, origin=risk_origin)
         built = [self._target(ep, signal, rref, e, baselines_of.get(e.href.id, []) if e.href.id else []) for e in entries]
         items = [self._attached_items(op, ti, e.href, run) for e in entries]
         anchors = [h.standing if e.href.id and (h := op.hypothesis(e.href.id)) is not None else None for e in entries]
@@ -301,7 +301,7 @@ class Core:
             if not claim or _norm(claim) in seen or any(_norm(claim) == _norm(k.claim) for k in known.values()):
                 continue
             seen.add(_norm(claim))
-            out.append(_Entry(HypothesisRef(source="articulated", claim=claim, entities=h.entities, refines=h.id), "supports", e.verdict))
+            out.append(_Entry(HypothesisRef(origin="articulated", claim=claim, entities=h.entities, refines=h.id), "supports", e.verdict))
         return out
 
     # ---------------------------------------------------------------- one target
@@ -318,14 +318,14 @@ class Core:
             known.add(_norm(b.claim))
             baselines.append(AssessedTrajectory(
                 episode_id=ep.id, role="baseline", signal=signal, risk=rref,
-                hypothesis=HypothesisRef(source="predefined", id=b.id, version=b.version, claim=b.claim, match_confidence=1.0, status=b.status),
+                hypothesis=HypothesisRef(origin="predefined", id=b.id, version=b.version, claim=b.claim, match_confidence=1.0, status=b.status),
                 score=round(a.fit, 3), reach=0.0, fit=round(a.fit, 3), rationale=a.rationale, ordinary_outcome=a.ordinary_outcome or b.claim))
         for n in bl.new[: self.settings.max_baselines if not stored_b else 1]:
             if not n.claim.strip() or _norm(n.claim) in known:
                 continue
             known.add(_norm(n.claim))
             baselines.append(AssessedTrajectory(
-                episode_id=ep.id, role="baseline", signal=signal, risk=rref, hypothesis=HypothesisRef(source="articulated", claim=n.claim),
+                episode_id=ep.id, role="baseline", signal=signal, risk=rref, hypothesis=HypothesisRef(origin="articulated", claim=n.claim),
                 score=round(n.fit, 3), reach=0.0, fit=round(n.fit, 3), rationale=n.rationale, ordinary_outcome=n.ordinary_outcome))
         fit, reach = round(v.fit, 3), round(v.reach, 3)
         if e.stance in ("weakens", "neutral"):   # no support: standing weighs counter-evidence against it, and ignores neutral
@@ -399,13 +399,13 @@ class Core:
 
     # ================================================================ helpers
     def _radar_queries(self, mission: MissionContext, op: OperationalContext, risk: Risk, run: _Run) -> list[str]:
-        claims = sorted(h.claim for h in op.primaries(risk.id))
-        key = (mission.version, risk.id, hashlib.sha256("|".join(claims).encode()).hexdigest()[:12])
+        """Radars come from the risk and the mission documents only (spec §5.2c). Deriving them from the held hypotheses
+        made them look only where the analyst already looks; the hypotheses reach triage by a separate path instead."""
+        key = (mission.version, risk.id)
         with self._lock:
             if key in self._radars:
                 return self._radars[key]
-        out = self.gw.call("radar.derive", {"risk_text": risk.text, "context": self._snippets(mission, risk.text, 6), "hypotheses": claims},
-                           recorder=run.rec)
+        out = self.gw.call("radar.derive", {"risk_text": risk.text, "context": self._snippets(mission, risk.text, 6)}, recorder=run.rec)
         qs = [r.query.strip() for r in out.radars if r.query.strip()]
         with self._lock:
             self._radars[key] = qs

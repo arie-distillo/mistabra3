@@ -14,8 +14,8 @@ mission:
       text: Hateful radicals attack members of Community X, their homes, or community institutions.
 operational:
   hypotheses:
-    - {id: H_elm, risk_id: attack, claim: "Homes on Elm Street are a target of hostile preparation", origin: analyst, status: open}
-    - {id: H_centre, risk_id: attack, claim: "The Community Centre is a target of hostile preparation", origin: analyst, status: open}
+    - {id: H_elm, risk_id: attack, claim: "Homes on Elm Street are a target of hostile preparation", author: analyst, status: open}
+    - {id: H_centre, risk_id: attack, claim: "The Community Centre is a target of hostile preparation", author: analyst, status: open}
 steps:
   - {episode: {id: p1a, text: "A passer-by photographed the front of Jens Hofer's house on Elm Street while walking past in the morning.", source: Field reports, credibility: 0.8}, hypothesis: H_elm, risk: attack, expect: {variant_of: passer_by}}
   - {episode: {id: p1b, text: "In the morning someone walking along Elm Street took a photo of the front of Jens Hofer's house.", source: Field reports, credibility: 0.8}, hypothesis: H_elm, risk: attack, expect: {variant_of: passer_by}}

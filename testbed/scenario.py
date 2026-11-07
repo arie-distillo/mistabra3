@@ -120,7 +120,7 @@ def from_ach(path: Path) -> Scenario:
     sid = path.stem
     risk = Risk(id="r1", text=d["description"].strip().split(". ")[0].rstrip(".") + ".")
     gt = {c["id"]: c for c in d.get("ground_truth", {}).get("claims", [])}
-    hyps = tuple(Hypothesis(id=f"H{i + 1}", risk_id="r1", claim=" ".join(c["text"].split()), origin="analyst", status="open")
+    hyps = tuple(Hypothesis(id=f"H{i + 1}", risk_id="r1", claim=" ".join(c["text"].split()), author="analyst", status="open")
                  for i, c in enumerate(d["claims"]))
     steps = [Step(episode=Episode(id=f"{sid}-e{i + 1}", text=" ".join(e["content"].split()), source=e.get("source_type", "unknown"),
                                   credibility=e.get("credibility", 0.7)), label=f"e{i + 1}")
@@ -146,7 +146,7 @@ def from_phase1(path: Path) -> list[Scenario]:
         gt = c.get("ground_truth", {})
         if c["capability"] == "conjunction_refutation":
             risk = Risk(id="r1", text=f"The {domain.replace('_', ' ')} incident is misattributed and its real cause stays unaddressed.")
-            h = Hypothesis(id="H1", risk_id="r1", claim=c["hypothesis"], origin="analyst", status="open")
+            h = Hypothesis(id="H1", risk_id="r1", claim=c["hypothesis"], author="analyst", status="open")
             steps = [Step(episode=e, hypothesis="H1", label=e.id, expect={"role": roles[e.id]}) for e in eps]
             refuting = [f"{cid}-{x}" for s in gt.get("refuting_sets", []) for x in s]
             out.append(Scenario(id=cid, title=c["hypothesis"], kind="conj", control=c.get("control", False),
@@ -155,7 +155,7 @@ def from_phase1(path: Path) -> list[Scenario]:
                                 note="Data points in order under the stated hypothesis (pattern 3)."))
         else:
             risk = Risk(id="r1", text=f"A {domain.replace('_', ' ')} failure recurs because its real cause is not identified.")
-            hyps = tuple(Hypothesis(id=f"G{i + 1}", risk_id="r1", claim=g, origin="analyst", status="open")
+            hyps = tuple(Hypothesis(id=f"G{i + 1}", risk_id="r1", claim=g, author="analyst", status="open")
                          for i, g in enumerate(c.get("given_hypotheses", [])))
             steps = [Step(episode=e, label=e.id, expect={"role": roles[e.id]}) for e in eps]
             out.append(Scenario(id=cid, title=f"missing hypothesis ({domain})", kind="miss", control=c.get("control", False),

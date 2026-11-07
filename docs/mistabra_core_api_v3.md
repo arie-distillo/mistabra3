@@ -44,7 +44,7 @@ What the system and analyst currently believe. Changes during work, after almost
 
 | Item | Content |
 | --- | --- |
-| Hypotheses | `id`, `version`, `risk_id`, claim, entities, `origin` (`analyst` \| `system`), `role` (`primary` \| `baseline`), `lambda` (true when the layer articulated it, section 3.4), `status` (`proposed` \| `open` \| `supported` \| `rejected`) |
+| Hypotheses | `id`, `version`, `risk_id`, claim, entities, `author` (`analyst` \| `system`), `role` (`primary` \| `baseline`), `lambda` (true when the layer articulated it, section 3.4), `status` (`proposed` \| `open` \| `supported` \| `rejected`) |
 | Relations | `baseline_of(B, H)`: B is an ordinary explanation competing with primary H for the same observations |
 | Trajectories | every trajectory raised and kept by the other layer, in the shape of `AssessedTrajectory` (section 4.3), each with `status` (`proposed` \| `confirmed` \| `rejected`) |
 
@@ -68,7 +68,7 @@ Episodes themselves are not part of the operational context; trajectories carry 
 
 ### 3.4 How an element came to be, and Lambda
 
-Every signal and hypothesis in an output carries its `source`:
+Every signal and hypothesis in an output carries its `origin` (v3.3: was `source`, which already names where an episode comes from):
 
 | Element | `given` | `predefined` | `articulated` |
 | --- | --- | --- | --- |
@@ -132,9 +132,9 @@ AssessmentGroup:
 
 AssessedTrajectory:
   episode_id
-  signal:     {content, source: given | predefined | articulated}
+  signal:     {content, origin: given | predefined | articulated}
   hypothesis: HypothesisRef
-  risk:       {risk_id, source: given | predefined}
+  risk:       {risk_id, origin: given | predefined}
   score:      [0, 1]                # the episode in isolation, section 5.1
   reach:      [0, 1]                # how far along the path to the risk the episode sits
   fit:        [0, 1]                # how well the episode supports the hypothesis
@@ -142,11 +142,11 @@ AssessedTrajectory:
   rationale:  str                   # omitted when detail="scores"
   ordinary_outcome: str | None      # baselines only
   stance:     supports | weakens     # weakens: counter-evidence against the hypothesis (v3.1)
-  lambda_signal:     bool           # signal.source == articulated
-  lambda_hypothesis: bool           # hypothesis.source == articulated
+  lambda_signal:     bool           # signal.origin == articulated
+  lambda_hypothesis: bool           # hypothesis.origin == articulated
 
 HypothesisRef:
-  source: given | predefined | articulated
+  origin: given | predefined | articulated
   given:        {id, version} or {claim}
   predefined:   {id, version, match_confidence}
   articulated:  {claim, entities}
@@ -231,6 +231,14 @@ and a hypothesis could only ever gain standing.
   layer's own proposals must not talk it there.
 - **Score stays isolated.** The layer shows the model a held hypothesis's evidence so that it can see whether an episode bears
   on it, but `fit` and `reach` — and so `score` — rate the episode alone. Combining evidence is standing's job.
+
+### 5.2c Radars come from the risk, not from hypotheses (v3.3)
+
+Radars are derived from a risk and the mission documents only, never from the hypotheses currently held: radars shaped
+by current hypotheses look only where the analyst already looks, and miss the episodes that point to a new
+hypothesis. The held hypotheses still make the layer more sensitive, through a separate path: an episode is relevant
+if it answers a radar, OR bears on a held hypothesis, OR could be a step toward the risk. Hypotheses can add
+relevance, never remove it. Radars are therefore fixed per mission version and risk.
 
 ### 5.3 Reuse of stored hypotheses and baselines
 
@@ -319,7 +327,7 @@ Each is measured first for the reference implementation against the pairwise bas
 
 ## 9. Implementation notes (non-normative)
 
-**Reuse from the PoC.** LLM gateway and provider abstraction; versioned prompts; fake provider; the abducer (`trajectory.risk`, `trajectory.baseline`), which already completes hypotheses and baselines and reuses existing ones; the decision models — `pairwise` already computes `score`, and the set-wise model's use of attached signals is the starting point for `standing`; the PoC's replay of state as of a signal's arrival gives `standing.without`. New: completion for the eight patterns, `source` on each element, matching with confidence, status weighting, `scope` and `detail`, provenance for both contexts. The PoC's store and facade APIs become the other layer.
+**Reuse from the PoC.** LLM gateway and provider abstraction; versioned prompts; fake provider; the abducer (`trajectory.risk`, `trajectory.baseline`), which already completes hypotheses and baselines and reuses existing ones; the decision models — `pairwise` already computes `score`, and the set-wise model's use of attached signals is the starting point for `standing`; the PoC's replay of state as of a signal's arrival gives `standing.without`. New: completion for the eight patterns, `origin` on each element, matching with confidence, status weighting, `scope` and `detail`, provenance for both contexts. The PoC's store and facade APIs become the other layer.
 
 **Radars.** Derived inside the layer from the active risks and the stored primary hypotheses, cached per (mission version, operational hash), used to skip full reasoning for episodes that bear on nothing. A radar match makes the signal `predefined`; no match makes it `articulated`.
 

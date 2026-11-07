@@ -53,9 +53,9 @@ class OtherLayer:
             return self._hyp_id(ref.model_copy(update={"id": same.id}), risk_id, role, baseline_of)
         self.n += 1
         hid = f"{'B' if role == 'baseline' else 'N'}{self.n}"
-        given = ref.source == "given"
-        self.hyps.append(Hypothesis(id=hid, risk_id=risk_id, claim=ref.claim, entities=ref.entities, origin="analyst" if given else "system",
-                                    role=role, is_lambda=(ref.source == "articulated" and role == "primary"),
+        given = ref.origin == "given"
+        self.hyps.append(Hypothesis(id=hid, risk_id=risk_id, claim=ref.claim, entities=ref.entities, author="analyst" if given else "system",
+                                    role=role, is_lambda=(ref.origin == "articulated" and role == "primary"),
                                     status="open" if given else "proposed", baseline_of=(baseline_of,) if baseline_of else (),
                                     refines=ref.refines))
         return hid
@@ -109,7 +109,7 @@ class OtherLayer:
 class GroupRec:
     risk: str
     hypothesis_id: str
-    source: str
+    origin: str
     claim: str
     score: float
     fit: float
@@ -146,7 +146,7 @@ class ScenarioResult:
     kind: str
     control: bool
     steps: list[StepRec] = field(default_factory=list)
-    hypotheses: dict[str, dict] = field(default_factory=dict)     # stored primary id -> {claim, lambda, origin, status, standing}
+    hypotheses: dict[str, dict] = field(default_factory=dict)     # stored primary id -> {claim, lambda, author, status, standing}
     final: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
 
@@ -176,7 +176,7 @@ def run_scenario(core: Core, sc: Scenario, log=print) -> ScenarioResult:
             groups = []
             for g, hid in zip(a.groups, ids):
                 t = g.target
-                groups.append(GroupRec(risk=t.risk.risk_id, hypothesis_id=hid, source=t.hypothesis.source, claim=t.hypothesis.claim,
+                groups.append(GroupRec(risk=t.risk.risk_id, hypothesis_id=hid, origin=t.hypothesis.origin, claim=t.hypothesis.claim,
                                        score=t.score, fit=t.fit, reach=t.reach, lambda_signal=t.lambda_signal, lambda_hypothesis=t.lambda_hypothesis,
                                        match_confidence=t.hypothesis.match_confidence, standing=g.standing.value, without=g.standing.without,
                                        delta=g.standing.delta, baselines=len(g.baselines), inconsistency=g.inconsistency,
@@ -192,7 +192,7 @@ def run_scenario(core: Core, sc: Scenario, log=print) -> ScenarioResult:
             log(f"  [{sc.id}] step {i}/{len(sc.steps)} ({100 * i // len(sc.steps)}%)  [{time.time() - t0:.1f}s]")
     for h in layer.hyps:
         if h.role == "primary":
-            res.hypotheses[h.id] = {"claim": h.claim, "lambda": h.is_lambda, "origin": h.origin, "status": h.status, "refines": h.refines,
+            res.hypotheses[h.id] = {"claim": h.claim, "lambda": h.is_lambda, "author": h.author, "status": h.status, "refines": h.refines,
                                     "risk": h.risk_id, "standing": last_standing.get(h.id)}
     res.final = {**sc.final, "_created": created}
     if sc.final.get("jointly_strong"):

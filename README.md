@@ -14,7 +14,7 @@ core = Core(Settings.from_env())
 a = core.assess(mission, operational, TrajectoryInput(episode=Episode(id="e1", text="...", source="Field reports", credibility=0.8)))
 for g in a.groups:
     t = g.target
-    print(t.risk.risk_id, t.hypothesis.source, t.hypothesis.claim, t.score, g.standing.value, t.lambda_signal, t.lambda_hypothesis)
+    print(t.risk.risk_id, t.hypothesis.origin, t.hypothesis.claim, t.score, g.standing.value, t.lambda_signal, t.lambda_hypothesis)
 ```
 
 The layer reads the mission context (documents, risks; versioned) and the operational context (hypotheses with
@@ -50,8 +50,8 @@ docs/                   the spec
 pip install -e ".[dev]"
 ```
 
-Per episode and candidate risk the layer makes three model calls (plus `radar.derive`, cached while the held
-hypotheses do not change):
+Per episode and candidate risk the layer makes three model calls (plus `radar.derive`, from the risk and mission
+documents only, once per mission version):
 
 1. `episode.triage` (fast tier) — is the episode relevant, directly or through a held hypothesis, and which radar does
    it answer? An irrelevant episode stops here, after one call.

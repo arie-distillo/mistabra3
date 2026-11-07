@@ -78,7 +78,7 @@ class Hypothesis(Frozen):
     risk_id: str
     claim: str
     entities: tuple[str, ...] = ()
-    origin: Literal["analyst", "system"] = "analyst"
+    author: Literal["analyst", "system"] = "analyst"   # who created it (was `origin` before v3.3)
     role: Literal["primary", "baseline"] = "primary"
     is_lambda: bool = Field(False, alias="lambda")
     status: HypothesisStatus = "open"
@@ -163,17 +163,17 @@ class TrajectoryInput(Frozen):
 
 
 # ---------------------------------------------------------------- output
-Source = Literal["given", "predefined", "articulated"]
+Origin = Literal["given", "predefined", "articulated"]   # where an element of a trajectory came from
 
 
 class SignalOut(Frozen):
     content: SignalContent
-    source: Source
+    origin: Origin
     radar: str | None = None                   # the radar query that matched, when predefined
 
 
 class HypothesisRef(Frozen):
-    source: Source
+    origin: Origin
     id: str | None = None                      # given (stored) or predefined
     version: int | None = None
     claim: str
@@ -185,7 +185,7 @@ class HypothesisRef(Frozen):
 
 class RiskRef(Frozen):
     risk_id: str
-    source: Literal["given", "predefined"]
+    origin: Literal["given", "predefined"]
 
 
 class AssessedTrajectory(Frozen):
@@ -204,11 +204,11 @@ class AssessedTrajectory(Frozen):
 
     @property
     def lambda_signal(self) -> bool:
-        return self.signal.source == "articulated"
+        return self.signal.origin == "articulated"
 
     @property
     def lambda_hypothesis(self) -> bool:
-        return self.hypothesis.source == "articulated" and self.role == "primary"
+        return self.hypothesis.origin == "articulated" and self.role == "primary"
 
 
 class StandingUse(Frozen):

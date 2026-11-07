@@ -145,7 +145,7 @@ def a2_lambda(results: list[ScenarioResult], established: float = 0.5, grade=Non
                 def root(h, hops=0):
                     parent = res.hypotheses.get(h.get("refines") or "")
                     return root(parent, hops + 1) if parent is not None and hops < 10 else h
-                fa = [h for h in lam if (h["standing"] or 0) >= established and root(h)["origin"] != "analyst"]
+                fa = [h for h in lam if (h["standing"] or 0) >= established and root(h)["author"] != "analyst"]
                 false_alarm.append(bool(fa))
                 if fa:
                     fails.append(f"{res.id} (control): Lambda hypothesis established: {fa[0]['claim']}")
@@ -212,12 +212,12 @@ def a4_matching(results: list[ScenarioResult]) -> dict:
                 continue
             want = _wanted(res, m)
             g = _match_group(s, want)
-            good = g is not None and g.hypothesis_id in want and g.source == "predefined"
+            good = g is not None and g.hypothesis_id in want and g.origin == "predefined"
             ok.append(good)
-            false_new.append(not good and g is not None and g.source == "articulated")
-            wrong.append(not good and g is not None and g.source == "predefined")
+            false_new.append(not good and g is not None and g.origin == "articulated")
+            wrong.append(not good and g is not None and g.origin == "predefined")
             if not good:
-                fails.append(f"{res.id}:{s.label} expected match {want}, got {(g.source, g.hypothesis_id, g.claim) if g else 'no group'}")
+                fails.append(f"{res.id}:{s.label} expected match {want}, got {(g.origin, g.hypothesis_id, g.claim) if g else 'no group'}")
     return {"match_accuracy": ratio(ok), "false_new_rate": ratio(false_new), "wrong_match_rate": ratio(wrong), "n": len(ok), "failures": fails}
 
 
@@ -242,7 +242,7 @@ def a6_self_reinforcement(results: list[ScenarioResult]) -> dict:
         cap = res.final.get("max_standing")
         if cap is None:
             continue
-        peak = max(((h["standing"] or 0.0, h["claim"]) for h in res.hypotheses.values() if h["origin"] == "system"), default=(0.0, None))
+        peak = max(((h["standing"] or 0.0, h["claim"]) for h in res.hypotheses.values() if h["author"] == "system"), default=(0.0, None))
         peaks[res.id] = peak[0]
         ok.append(peak[0] <= cap)
         if peak[0] > cap:
@@ -280,11 +280,11 @@ def e_expectations(results: list[ScenarioResult]) -> dict:
         for s in res.steps:
             e = s.expect
             g = _match_group(s, _wanted(res, e["matches"])) if e.get("matches") else (s.groups[0] if s.groups else None)
-            if "hypothesis_source" in e:
-                good = g is not None and g.source == e["hypothesis_source"]
+            if "hypothesis_origin" in e:
+                good = g is not None and g.origin == e["hypothesis_origin"]
                 ok.append(good)
                 if not good:
-                    fails.append(f"{res.id}:{s.label} hypothesis source {g.source if g else None}, expected {e['hypothesis_source']}")
+                    fails.append(f"{res.id}:{s.label} hypothesis source {g.origin if g else None}, expected {e['hypothesis_origin']}")
             if "inconsistency" in e:
                 good = g is not None and bool(g.inconsistency) == bool(e["inconsistency"])
                 ok.append(good)
@@ -300,7 +300,7 @@ def e_expectations(results: list[ScenarioResult]) -> dict:
                     fails.append(f"{res.id}:{s.label} stance {got}, expected {e['stance']}")
             if "not_articulated_like" in e:
                 claim = res.hypotheses.get(e["not_articulated_like"], {}).get("claim", "")
-                dup = [x.claim for x in s.groups if x.source == "articulated" and jaccard(x.claim, claim) >= 0.5]
+                dup = [x.claim for x in s.groups if x.origin == "articulated" and jaccard(x.claim, claim) >= 0.5]
                 ok.append(not dup)
                 if dup:
                     fails.append(f"{res.id}:{s.label} re-articulated a rejected claim: {dup[0]}")

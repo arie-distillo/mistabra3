@@ -19,7 +19,7 @@ def test_cache_and_record():
     gw.call("radar.derive", V, recorder=rec)
     gw.call("radar.derive", V, recorder=rec)
     assert gw.stats == {"calls": 1, "cached": 1, "errors": 0, "retries": 0} and p.calls == ["radar.derive"]
-    assert [c.cached for c in rec.calls] == [False, True] and rec.calls[0].prompt_version == "1" and rec.calls[0].retries == 0
+    assert [c.cached for c in rec.calls] == [False, True] and rec.calls[0].prompt_version == "2" and rec.calls[0].retries == 0
 
 
 def test_disk_cache_survives_a_new_gateway(tmp_path):
@@ -130,9 +130,9 @@ def test_harness_keeps_and_reuses(tmp_path):
                        log=lambda m: None)
     assert len(res.steps) == 2 and all(s.groups for s in res.steps)
     first = res.steps[0].groups[0]
-    assert first.source == "articulated" and res.hypotheses[first.hypothesis_id]["lambda"] and res.hypotheses[first.hypothesis_id]["status"] == "proposed"
+    assert first.origin == "articulated" and res.hypotheses[first.hypothesis_id]["lambda"] and res.hypotheses[first.hypothesis_id]["status"] == "proposed"
     second = next(g for g in res.steps[1].groups if g.hypothesis_id == first.hypothesis_id)
-    assert second.source == "predefined" and second.without > 0      # the stored proposal was matched and weighed
+    assert second.origin == "predefined" and second.without > 0      # the stored proposal was matched and weighed
 
 
 def test_analyst_actions_applied():
@@ -304,10 +304,10 @@ def test_sharpening_the_analysts_hypothesis_is_not_a_false_alarm_in_a_control():
     from testbed.harness import ScenarioResult
     from testbed.metrics import a2_lambda
     res = ScenarioResult(id="c", kind="miss", control=True, hypotheses={
-        "G1": {"claim": "undercooked chicken", "lambda": False, "origin": "analyst", "status": "open", "standing": 0.6, "refines": None},
-        "N1": {"claim": "Campylobacter in chicken undercooked on grill 2", "lambda": True, "origin": "system", "status": "proposed",
+        "G1": {"claim": "undercooked chicken", "lambda": False, "author": "analyst", "status": "open", "standing": 0.6, "refines": None},
+        "N1": {"claim": "Campylobacter in chicken undercooked on grill 2", "lambda": True, "author": "system", "status": "proposed",
                "standing": 0.7, "refines": "G1"},
-        "N2": {"claim": "a new cause", "lambda": True, "origin": "system", "status": "proposed", "standing": 0.3, "refines": None}})
+        "N2": {"claim": "a new cause", "lambda": True, "author": "system", "status": "proposed", "standing": 0.3, "refines": None}})
     assert a2_lambda([res])["control_false_alarm"] == 0.0
     res.hypotheses["N2"]["standing"] = 0.6
     assert a2_lambda([res])["control_false_alarm"] == 1.0

@@ -11,7 +11,7 @@ def test_scope_open_adds_other_groups_given_first(core, mission, op):
     given = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE), hypothesis="H_centre"))
     opened = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE), hypothesis="H_centre"), scope="open")
     assert len(given.groups) == 1 and len(opened.groups) > 1
-    assert opened.groups[0].target.hypothesis.id == "H_centre" and opened.groups[0].target.hypothesis.source == "given"
+    assert opened.groups[0].target.hypothesis.id == "H_centre" and opened.groups[0].target.hypothesis.origin == "given"
     assert any(g.target.hypothesis.id == "H_elm" for g in opened.groups[1:])
 
 
@@ -32,22 +32,22 @@ def test_detail_scores_same_values_no_rationale(core, mission, op):
 # ---------------------------------------------------------------- reuse, matching, rejection
 def test_stored_baselines_reused_and_new_only_when_uncovered(core, mission, op):
     g = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE), hypothesis="H_elm")).groups[0]
-    stored = [b for b in g.baselines if b.hypothesis.source == "predefined"]
+    stored = [b for b in g.baselines if b.hypothesis.origin == "predefined"]
     assert [b.hypothesis.id for b in stored] == ["B_listing"]
-    assert not any(b.hypothesis.source == "articulated" for b in g.baselines)   # the stored one covers it: nothing new
+    assert not any(b.hypothesis.origin == "articulated" for b in g.baselines)   # the stored one covers it: nothing new
 
 
 def test_low_confidence_verdict_is_not_a_match(mission, op):
     over = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm", "stance": "supports", "confidence": 0.3, "fit": 0.5, "reach": 0.3}],
                                "new": [{"claim": "Elm Street homes are being watched by someone", "fit": 0.5, "reach": 0.3}]}}
     a = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack"))
-    assert [(g.target.hypothesis.source, g.target.hypothesis.claim[:15]) for g in a.groups] == [("articulated", "Elm Street home")]
+    assert [(g.target.hypothesis.origin, g.target.hypothesis.claim[:15]) for g in a.groups] == [("articulated", "Elm Street home")]
 
 
 def test_new_claim_restating_a_held_one_is_that_one(mission, op):
     over = {"episode.assess": {"new": [{"claim": "homes on Elm Street are a target of hostile preparation.", "fit": 0.5, "reach": 0.3}]}}
     t = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack")).groups[0].target
-    assert t.hypothesis.source == "predefined" and t.hypothesis.id == "H_elm" and not t.lambda_hypothesis
+    assert t.hypothesis.origin == "predefined" and t.hypothesis.id == "H_elm" and not t.lambda_hypothesis
 
 
 def test_rejected_claim_never_rearticulated(mission, op):
@@ -58,12 +58,12 @@ def test_rejected_claim_never_rearticulated(mission, op):
     assert core.assess(mission, op, ti).groups == ()                          # scope given: rejected hypothesis not reported
     opened = core.assess(mission, op, ti, scope="open")                            # scope open: reported, marked rejected
     g = next(g for g in opened.groups if g.target.hypothesis.id == "H_worship")
-    assert g.target.hypothesis.status == "rejected" and g.target.hypothesis.source == "predefined"
+    assert g.target.hypothesis.status == "rejected" and g.target.hypothesis.origin == "predefined"
 
 
 def test_rejected_hypothesis_given_is_reported_with_status(core, mission, op):
     g = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE), hypothesis="H_worship")).groups[0]
-    assert g.target.hypothesis.status == "rejected" and g.target.hypothesis.source == "given"
+    assert g.target.hypothesis.status == "rejected" and g.target.hypothesis.origin == "given"
 
 
 # ---------------------------------------------------------------- score
@@ -150,14 +150,15 @@ def test_inputs_are_not_mutated(core, mission, op):
     assert (mission.model_dump(), op.model_dump()) == before
 
 
-def test_radars_follow_the_stored_hypotheses(core, mission, op):
+def test_radars_come_from_the_risk_not_from_hypotheses(mission, op):
+    """Spec §5.2c: radars shaped by the held hypotheses would only look where the analyst already looks."""
+    seen = []
+    core = make_core({"radar.derive": lambda d: (seen.append(d), {"radars": [{"query": "someone watches a community building"}]})[1]})
     core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE)))
-    n = len(core._radars)
-    core.assess(mission, op, TrajectoryInput(episode=ep(HOODED)))
-    assert len(core._radars) == n                              # same contexts: radars reused
-    more = op.model_copy(update={"hypotheses": op.hypotheses[:1]})
-    core.assess(mission, more, TrajectoryInput(episode=ep(HOUSE)))
-    assert len(core._radars) > n                               # stored hypotheses changed: radars re-derived
+    n = len(seen)
+    core.assess(mission, op.model_copy(update={"hypotheses": op.hypotheses[:1]}), TrajectoryInput(episode=ep(HOODED)))
+    assert len(seen) == n                                     # other hypotheses: same radars, not re-derived
+    assert all("hypotheses" not in d for d in seen)           # and the hypotheses never reach the derivation
 
 
 # ---------------------------------------------------------------- counter-evidence (stance)
@@ -176,7 +177,7 @@ def test_counter_evidence_attaches_as_weakens(mission, op):
     assert len(a.groups) == 1
     g = a.groups[0]
     t = g.target
-    assert t.hypothesis.id == "H_elm" and t.hypothesis.source == "predefined" and t.stance == "weakens" and t.score == 0.0
+    assert t.hypothesis.id == "H_elm" and t.hypothesis.origin == "predefined" and t.stance == "weakens" and t.score == 0.0
     assert "tenant" in t.rationale and g.baselines == ()
 
 
@@ -257,9 +258,9 @@ def test_refinement_is_a_new_hypothesis_linked_to_the_held_one(mission, op):
                                         "fit": 0.6, "reach": 0.5},
                                        {"claim": "Something else entirely", "refines": "nope", "fit": 0.4, "reach": 0.2}]}}
     a = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOODED), risk="attack"))
-    held = next(g.target.hypothesis for g in a.groups if g.target.hypothesis.source == "predefined")
+    held = next(g.target.hypothesis for g in a.groups if g.target.hypothesis.origin == "predefined")
     assert held.id == "H_centre" and held.refines is None
-    new = [g.target.hypothesis for g in a.groups if g.target.hypothesis.source == "articulated"]
+    new = [g.target.hypothesis for g in a.groups if g.target.hypothesis.origin == "articulated"]
     assert [(h.refines) for h in new] == ["H_centre", None]           # an unknown id is dropped, not invented
 
 
@@ -267,7 +268,7 @@ def test_revised_claim_becomes_a_refinement(mission, op):
     over = {"episode.assess": {"stored": [{"hypothesis_id": "H_centre", "stance": "supports", "confidence": 0.9, "fit": 0.5, "reach": 0.3,
                                            "revised_claim": "The Community Centre's side doors are being mapped for a night entry"}]}}
     a = make_core(over).assess(mission, op, TrajectoryInput(episode=ep(HOODED), risk="attack"))
-    hs = [(g.target.hypothesis.source, g.target.hypothesis.id, g.target.hypothesis.refines) for g in a.groups]
+    hs = [(g.target.hypothesis.origin, g.target.hypothesis.id, g.target.hypothesis.refines) for g in a.groups]
     assert ("predefined", "H_centre", None) in hs and ("articulated", None, "H_centre") in hs
 
 
@@ -332,7 +333,7 @@ def test_held_hypothesis_with_enough_facts_is_sharpened_and_the_refinement_inher
     assert len(seen) == 1 and len(seen[0]["facts"]) == 3 and seen[0]["facts"][-1]["new"]
     ref = next(g for g in a.groups if g.target.hypothesis.refines == "H_elm")
     held = next(g for g in a.groups if g.target.hypothesis.id == "H_elm")
-    assert ref.target.hypothesis.source == "articulated" and ref.target.lambda_hypothesis
+    assert ref.target.hypothesis.origin == "articulated" and ref.target.lambda_hypothesis
     assert ref.standing.without == held.standing.without > 0          # same inherited evidence
 
 
@@ -341,14 +342,14 @@ def test_too_few_facts_or_an_existing_refinement_means_no_sharpening(mission, op
     calls = []
     over = {**SUPPORTS_ELM, "hypothesis.sharpen": lambda d: (calls.append(d), {"sharper_claim": "x y z"})[1]}
     make_core(over).assess(mission, _with_facts(op, 1), TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack"))
-    child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", origin="system", refines="H_elm")
+    child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", author="system", refines="H_elm")
     make_core(over).assess(mission, _with_facts(op, 3, [child]), TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack"))
     assert calls == []
 
 
 def test_a_stored_refinement_counts_its_parents_evidence(mission, op):
     from mistabra_core.types import Hypothesis
-    child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", origin="system", status="proposed", refines="H_elm")
+    child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", author="system", status="proposed", refines="H_elm")
     over = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm2", "stance": "supports", "confidence": 0.9, "fit": 0.6, "reach": 0.3}]}}
     g = make_core(over, standing="noisy_or").assess(mission, _with_facts(op, 2, [child]),
                                                     TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack")).groups[0]

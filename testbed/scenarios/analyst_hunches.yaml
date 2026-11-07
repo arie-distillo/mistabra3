@@ -22,9 +22,9 @@ mission:
       text: The Trust's renovation tender is captured by a single bidder through front companies.
 operational:
   hypotheses:
-    - {id: H_centre, risk_id: attack, claim: "The Community Centre is a target of hostile preparation", origin: analyst, status: open}
-    - {id: H_elm, risk_id: attack, claim: "Homes on Elm Street are a target of hostile preparation", origin: analyst, status: open}
-    - {id: H_rejected, risk_id: attack, claim: "The Place of Worship is a target of hostile preparation", origin: analyst, status: rejected}
+    - {id: H_centre, risk_id: attack, claim: "The Community Centre is a target of hostile preparation", author: analyst, status: open}
+    - {id: H_elm, risk_id: attack, claim: "Homes on Elm Street are a target of hostile preparation", author: analyst, status: open}
+    - {id: H_rejected, risk_id: attack, claim: "The Place of Worship is a target of hostile preparation", author: analyst, status: rejected}
 steps:
   - label: doors
     note: pattern 3 — the analyst senses the link to H_centre without stating it
@@ -34,7 +34,7 @@ steps:
       credibility: 0.8
       occurred: "2026-08-10T17:00:00Z"
     hypothesis: H_centre
-    expect: {lambda_signal: true, hypothesis_source: given, band: strong}
+    expect: {lambda_signal: true, hypothesis_origin: given, band: strong}
   - label: bidders
     note: pattern 2 — "this matters, I don't know what it means"; nothing stored fits
     episode:
@@ -64,7 +64,7 @@ steps:
       content: {actor: Karl Brandt, behaviour: veiled threat naming the festival, target: Community Centre, modifiers: [explicit_intent]}
     hypothesis: H_centre
     risk: attack
-    expect: {lambda_signal: false, lambda_hypothesis: false, hypothesis_source: given}
+    expect: {lambda_signal: false, lambda_hypothesis: false, hypothesis_origin: given}
   - label: inconsistent
     note: pattern 7 — a stored hypothesis given under another risk
     episode:

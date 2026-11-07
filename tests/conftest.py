@@ -34,8 +34,8 @@ def mission():
 @pytest.fixture
 def op():
     return OperationalContext(hypotheses=(
-        Hypothesis(id="H_elm", risk_id="attack", claim="Homes on Elm Street are a target of hostile preparation", origin="analyst"),
-        Hypothesis(id="H_centre", risk_id="attack", claim="The Community Centre is a target of hostile preparation", origin="analyst"),
+        Hypothesis(id="H_elm", risk_id="attack", claim="Homes on Elm Street are a target of hostile preparation", author="analyst"),
+        Hypothesis(id="H_centre", risk_id="attack", claim="The Community Centre is a target of hostile preparation", author="analyst"),
         Hypothesis(id="B_listing", risk_id="attack", claim="the person has a property interest", role="baseline", baseline_of=("H_elm",)),
         Hypothesis(id="H_worship", risk_id="attack", claim="The Place of Worship is a target of hostile preparation", status="rejected"),
     ))
