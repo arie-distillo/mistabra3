@@ -7,7 +7,11 @@ calls — that is `OtherLayer`, the smallest version of the other layer that mak
   (analyst drafts as `open`), new baselines with `baseline_of` the target, every trajectory with status `proposed`;
 - a claim identical (after normalisation) to a stored one reuses it — the other layer's own exact-match dedupe;
   anything looser is the core layer's matching, which is what A4 measures;
-- analyst actions in a step's `after` are applied: confirm the step's target trajectory, reject or support a hypothesis.
+- analyst actions in a step's `after` are applied: confirm the step's target trajectory, reject or support a hypothesis;
+- look-back: when a step creates a hypothesis, recent episodes that attached to nothing are re-submitted against it
+  (pattern E+H, an ordinary call). The core assesses one episode at a time and keeps no history, so a clue that
+  arrived before the hypothesis it supports existed (miss_05: the plumber removing the water filter) would otherwise
+  never be seen again. Only the layer that keeps history can do this.
 """
 from __future__ import annotations
 
@@ -138,6 +142,7 @@ class StepRec:
     cached: int
     seconds: float
     error: str | None = None          # the layer failed on this episode; the scenario goes on without it
+    lookback: list[dict] = field(default_factory=list)   # earlier episodes re-submitted against hypotheses this step created
 
 
 @dataclass
@@ -151,17 +156,28 @@ class ScenarioResult:
     error: str | None = None
 
 
-def run_scenario(core: Core, sc: Scenario, log=print) -> ScenarioResult:
+def _rec(g, hid) -> GroupRec:
+    t = g.target
+    return GroupRec(risk=t.risk.risk_id, hypothesis_id=hid, origin=t.hypothesis.origin, claim=t.hypothesis.claim,
+                    score=t.score, fit=t.fit, reach=t.reach, lambda_signal=t.lambda_signal, lambda_hypothesis=t.lambda_hypothesis,
+                    match_confidence=t.hypothesis.match_confidence, standing=g.standing.value, without=g.standing.without,
+                    delta=g.standing.delta, baselines=len(g.baselines), inconsistency=g.inconsistency,
+                    missing=list(t.missing), stance=t.stance)
+
+
+def run_scenario(core: Core, sc: Scenario, log=print, lookback: bool = True, window: int = 8) -> ScenarioResult:
     layer = OtherLayer(sc)
     res = ScenarioResult(id=sc.id, kind=sc.kind, control=sc.control, final=sc.final)
     created: dict[str, list[str]] = {}
     last_standing: dict[str, float] = {}
     initial = [h.id for h in sc.operational.hypotheses if h.role == "primary"]
+    unattached: list[Step] = []            # earlier episodes that bore on nothing, for the look-back
     t0 = time.time()
     for i, step in enumerate(sc.steps, 1):
         runs = [step.model_copy(update={"hypothesis": hid}) for hid in initial] if sc.per_hypothesis else [step]
         for st in runs:
             ts = time.perf_counter()
+            before = {h.id for h in layer.hyps}
             try:
                 a = core.assess(sc.mission, layer.op, TrajectoryInput(episode=st.episode, signal=st.signal, hypothesis=st.hypothesis, risk=st.risk),
                                 scope=st.scope)
@@ -175,18 +191,35 @@ def run_scenario(core: Core, sc: Scenario, log=print) -> ScenarioResult:
             created.setdefault(st.label, []).extend(ids)
             groups = []
             for g, hid in zip(a.groups, ids):
-                t = g.target
-                groups.append(GroupRec(risk=t.risk.risk_id, hypothesis_id=hid, origin=t.hypothesis.origin, claim=t.hypothesis.claim,
-                                       score=t.score, fit=t.fit, reach=t.reach, lambda_signal=t.lambda_signal, lambda_hypothesis=t.lambda_hypothesis,
-                                       match_confidence=t.hypothesis.match_confidence, standing=g.standing.value, without=g.standing.without,
-                                       delta=g.standing.delta, baselines=len(g.baselines), inconsistency=g.inconsistency,
-                                       missing=list(t.missing), stance=t.stance))
+                groups.append(_rec(g, hid))
                 last_standing[hid] = g.standing.value
-            calls = a.provenance.calls
+            calls = list(a.provenance.calls)
+            looked = []
+            new = [h for h in layer.hyps if h.id not in before and h.role == "primary" and h.status != "rejected"]
+            if lookback and not sc.per_hypothesis and new and unattached:
+                for h in new:
+                    for old in list(unattached[-window:]):
+                        try:
+                            b = core.assess(sc.mission, layer.op, TrajectoryInput(episode=old.episode, hypothesis=h.id, risk=h.risk_id))
+                        except LLMOutputError as e:
+                            log(f"  [{sc.id}] look-back {old.label} -> {h.id}: {e}")
+                            continue
+                        calls += b.provenance.calls
+                        kept = [g for g in b.groups if g.target.stance in ("supports", "weakens") and g.target.hypothesis.id == h.id]
+                        if not kept:
+                            continue
+                        b = b.model_copy(update={"groups": tuple(kept)})
+                        for g, hid in zip(b.groups, layer.keep(b, old)):
+                            looked.append({"episode": old.label, **_rec(g, hid).__dict__})
+                            last_standing[hid] = g.standing.value
+                        if any(g.target.stance == "supports" for g in kept):
+                            unattached.remove(old)   # it is now evidence of that hypothesis (and reaches sharpening with it)
+            if not a.groups and not st.hypothesis:
+                unattached.append(st)
             res.steps.append(StepRec(label=st.label, episode_id=st.episode.id, pattern=a.pattern,
                                      given_hypothesis=st.hypothesis if isinstance(st.hypothesis, str) else (st.hypothesis.claim if st.hypothesis else None),
                                      groups=groups, expect=st.expect, calls=len(calls), cached=sum(c.cached for c in calls),
-                                     seconds=round(time.perf_counter() - ts, 2)))
+                                     seconds=round(time.perf_counter() - ts, 2), lookback=looked))
             layer.after(st, ids, created)
         if i % 5 == 0 or i == len(sc.steps):
             log(f"  [{sc.id}] step {i}/{len(sc.steps)} ({100 * i // len(sc.steps)}%)  [{time.time() - t0:.1f}s]")

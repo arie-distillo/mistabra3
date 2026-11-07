@@ -43,7 +43,7 @@ HEADLINE = [
 ]
 
 
-def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4) -> dict:
+def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4, lookback: bool = True) -> dict:
     from mistabra_core import Core, Settings
     from mistabra_core.llm import LLMAuthError
     settings = Settings.from_env(**settings_overrides)
@@ -61,7 +61,7 @@ def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4) -> 
             return None
         log(f"[{i}/{len(scenarios)}] {sc.id} ({sc.kind}{', control' if sc.control else ''}) — {len(sc.steps)} steps  [{time.time() - t0:.0f}s]")
         try:
-            r = run_scenario(core, sc, log=log)
+            r = run_scenario(core, sc, log=log, lookback=lookback)
             log(f"[{i}/{len(scenarios)}] {sc.id} done  [{time.time() - t0:.0f}s]")
             return r
         except LLMAuthError as e:
@@ -93,7 +93,9 @@ def markdown(reports: list[dict]) -> str:
         out.append(f"- **{s['standing']}** standing: provider `{s['provider']}`, model `{s['model']}`, fast `{s['fast_model']}`; "
                    f"{r['llm']['calls']} model calls, {r['llm']['cached']} cached, {r['llm'].get('retries', 0)} validation retries, "
                    f"{r['llm']['errors']} errors, "
-                   f"{sum(1 for x in r['scenarios'] for st in x['steps'] if st.get('error'))} episodes skipped, {r['seconds']} s")
+                   f"{sum(1 for x in r['scenarios'] for st in x['steps'] if st.get('error'))} episodes skipped, "
+                   f"{sum(1 for x in r['scenarios'] for st in x['steps'] for lb in st.get('lookback', []) if lb['stance'] == 'supports')} "
+                   f"earlier episodes re-attached by look-back, {r['seconds']} s")
     if reports and reports[0]["settings"]["provider"] == "fake":
         out += ["", "> Fake provider: these numbers prove the plumbing, not the method. Run with `--live` for measurements."]
     out += ["", "| Metric | " + " | ".join(r["settings"]["standing"] for r in reports) + " |", "| --- |" + " --- |" * len(reports)]
@@ -141,6 +143,7 @@ def main(argv=None) -> int:
     ap.add_argument("--only", action="append", default=[], help="run scenarios whose id contains this text (repeatable)")
     ap.add_argument("--cache", help="SQLite file caching model outputs across runs")
     ap.add_argument("--jobs", type=int, default=4, help="scenarios run in parallel (default 4)")
+    ap.add_argument("--no-lookback", action="store_true", help="do not re-submit earlier unattached episodes against new hypotheses")
     ap.add_argument("--repeat", type=int, default=1, help="independent runs (fresh cache entries after the first): run-to-run spread")
     ap.add_argument("--temperature", type=float, default=None, help="sampling temperature (default MISTABRA_TEMPERATURE or 0)")
     ap.add_argument("--out", default=str(HERE / "reports"))
@@ -176,7 +179,7 @@ def main(argv=None) -> int:
         if a.repeat > 1:
             print(f"=== repeat {i + 1}/{a.repeat}")
         salt = {"cache_salt": f"repeat{i}"} if i else {}
-        runs.append([run({**over, **salt, "standing": m}, a.only, jobs=a.jobs) for m in modes])
+        runs.append([run({**over, **salt, "standing": m}, a.only, jobs=a.jobs, lookback=not a.no_lookback) for m in modes])
     reports = runs[0]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

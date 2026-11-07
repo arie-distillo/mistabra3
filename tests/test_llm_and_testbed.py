@@ -256,6 +256,8 @@ def test_standing_is_a_chain_of_updates_across_steps():
                     assert g.without == last[g.hypothesis_id]
                     checked += 1
                 last[g.hypothesis_id] = g.standing
+            for lb in st.lookback:
+                last[lb["hypothesis_id"]] = lb["standing"]
         assert all(res.hypotheses[h]["standing"] == v for h, v in last.items())
     assert checked
 
@@ -311,3 +313,31 @@ def test_sharpening_the_analysts_hypothesis_is_not_a_false_alarm_in_a_control():
     assert a2_lambda([res])["control_false_alarm"] == 0.0
     res.hypotheses["N2"]["standing"] = 0.6
     assert a2_lambda([res])["control_false_alarm"] == 1.0
+
+
+def test_look_back_reattaches_an_earlier_clue_to_a_new_hypothesis():
+    """miss_05's first clue (the plumber removed the water filter) arrives before any hypothesis it supports exists. When
+    a hypothesis appears later, the other layer re-submits it, and it attaches."""
+    from testbed.harness import run_scenario
+    from testbed.scenario import discover
+    from mistabra_core import Core
+    sc = next(s for s in discover() if s.id == "miss_05")
+    clue = next(st for st in sc.steps if "plumber" in st.episode.text)
+
+    def triage(d):
+        return {"relevant": "ice" in d["episode"]["text"], "confidence": 0.9, "content": {"summary": "s"}}
+
+    def assess(d):
+        g = d.get("given_hypothesis")
+        if g:   # look-back: the plumber's work order supports the ice hypothesis
+            return {"given": {"stance": "supports" if "filter" in d["episode"]["text"] else "unrelated", "fit": 0.6, "reach": 0.3}}
+        if any(h["claim"].startswith("Ice") for h in d.get("held_hypotheses", [])):
+            return {"stored": [{"hypothesis_id": h["id"], "stance": "supports", "confidence": 0.9, "fit": 0.5, "reach": 0.3}
+                               for h in d["held_hypotheses"] if h["claim"].startswith("Ice")]}
+        return {"new": [{"claim": "Ice from the ice machine made the diners ill", "fit": 0.6, "reach": 0.4}]}
+    core = Core(Settings(force_fake=True), provider=FakeProvider({"episode.triage": triage, "episode.assess": assess}))
+    on = run_scenario(core, sc, log=lambda *_: None)
+    looked = [lb for st in on.steps for lb in st.lookback]
+    assert [lb["episode"] for lb in looked if lb["stance"] == "supports"] == [clue.label]
+    off = run_scenario(core, sc, log=lambda *_: None, lookback=False)
+    assert not [lb for st in off.steps for lb in st.lookback]
