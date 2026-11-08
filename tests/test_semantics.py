@@ -369,3 +369,12 @@ def test_margin_score_applies_only_to_a_hypothesis_written_from_this_episode(mis
     h_fit = make_core(held).assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack")).groups[0].target.score
     h_mar = make_core(held, new_hypothesis_score="margin").assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack")).groups[0].target.score
     assert a_mar < a_fit and h_mar == h_fit                  # a matched hypothesis keeps the one formula
+
+
+def test_input_hash_covers_the_operational_context_and_detail(mission, op):
+    core = make_core()
+    ti = TrajectoryInput(episode=ep(HOUSE), risk="attack")
+    a = core.assess(mission, op, ti).provenance.input_hash
+    b = core.assess(mission, op.model_copy(update={"hypotheses": op.hypotheses[:1]}), ti).provenance.input_hash
+    c = core.assess(mission, op, ti, detail="scores").provenance.input_hash
+    assert a == core.assess(mission, op, ti).provenance.input_hash and len({a, b, c}) == 3

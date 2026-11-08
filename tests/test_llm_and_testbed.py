@@ -341,3 +341,26 @@ def test_look_back_reattaches_an_earlier_clue_to_a_new_hypothesis():
     assert [lb["episode"] for lb in looked if lb["stance"] == "supports"] == [clue.label]
     off = run_scenario(core, sc, log=lambda *_: None, lookback=False)
     assert not [lb for st in off.steps for lb in st.lookback]
+
+
+def test_identical_concurrent_requests_reach_the_provider_once():
+    import threading as _t
+    import time as _time
+    from concurrent.futures import ThreadPoolExecutor
+
+    def slow(d):
+        _time.sleep(0.2)
+        return {"radars": [{"query": "someone watches a building"}]}
+    p = FakeProvider({"radar.derive": slow})
+    g = _gw(p)
+    with ThreadPoolExecutor(8) as ex:
+        outs = list(ex.map(lambda _: g.call("radar.derive", V), range(8)))
+    assert len(outs) == 8 and p.calls.count("radar.derive") == 1 and g.stats["calls"] == 1 and g.stats["cached"] == 7
+
+
+def test_settings_reject_out_of_range_values():
+    import pytest as _p
+    for bad in ({"proposed_weight": 1.5}, {"match_threshold": -0.1}, {"max_evidence": 0}, {"temperature": 3.0},
+                {"new_hypothesis_score": "both"}):
+        with _p.raises(ValueError):
+            Settings(force_fake=True, **bad)

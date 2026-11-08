@@ -240,6 +240,13 @@ hypothesis. The held hypotheses still make the layer more sensitive, through a s
 if it answers a radar, OR bears on a held hypothesis, OR could be a step toward the risk. Hypotheses can add
 relevance, never remove it. Radars are therefore fixed per mission version and risk.
 
+### 5.2d What score and standing are, and are not
+
+Score and standing are ordered strengths for the analyst, on a 0-1 scale with documented bands; they are not
+probabilities. Neither is calibrated against observed frequencies: noisy-OR combines scores as if they were independent
+probabilities, and judged standing is a model's reading. Calibration against expert judgments on representative data
+is future work; until then, read them as "stronger than" / "weaker than", and the bands as a convention.
+
 ### 5.3 Reuse of stored hypotheses and baselines
 
 - The layer matches every articulated claim against the stored hypotheses of the relevant risk — including `proposed` ones — and reuses a match when it is the same claim, reporting `match_confidence`. Returning `articulated` for a claim a stored hypothesis already expresses is a defect and is measured (section 8).
@@ -270,8 +277,8 @@ Every assessment carries:
 | `models`, `prompts` | ids and versions used |
 | `mission_version` | the mission context version read |
 | `operational_items` | ids and versions of every hypothesis and trajectory read |
-| `input_hash` | hash of the input trajectory and options |
-| `deterministic` | whether the models ran deterministically (e.g. temperature 0) |
+| `input_hash` | hash of the whole input: trajectory, options (`scope`, `detail`), mission version, the full operational context, and the settings that shape the output (models, thresholds, weights, standing strategy) |
+| `deterministic` | whether this answer can be reproduced exactly: true only when every model answer came from the cache (or an offline model). Hosted models are not reproducible even at temperature 0 |
 
 Identical inputs, identical context versions and the same implementation version return identical results. This is what makes replay, audit and evaluation possible in the other layer.
 

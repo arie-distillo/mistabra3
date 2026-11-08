@@ -88,6 +88,7 @@ class Gateway:
         self.cache = _Cache(settings.cache_path)
         self.stats = {"calls": 0, "cached": 0, "errors": 0, "retries": 0}
         self._agents: dict[tuple, Agent] = {}
+        self._inflight: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._sem: asyncio.Semaphore | None = None
@@ -141,13 +142,30 @@ class Gateway:
         key = hashlib.sha256(f"{p.id}|{p.version}|{self.backend.name}|{model}|{user}"
                              f"{'|' + salt if salt else ''}{f'|t{temp}' if temp else ''}".encode()).hexdigest()
         t0 = time.perf_counter()
-        hit = self.cache.get(key)
-        if hit is not None:
-            self._count("cached")
-            if recorder is not None:
-                recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=True, ok=True, latency_ms=0))
-            self._log_call(task, model, user, hit, True, 0, recorder, 0)
-            return p.schema.model_validate_json(hit)
+        while True:
+            hit = self.cache.get(key)
+            if hit is not None:
+                self._count("cached")
+                if recorder is not None:
+                    recorder.add(LLMCallRecord(task=task, prompt_version=p.version, model=model, cached=True, ok=True, latency_ms=0))
+                self._log_call(task, model, user, hit, True, 0, recorder, 0)
+                return p.schema.model_validate_json(hit)
+            # coalesce: the same request already in flight in another thread is awaited, not sent again
+            with self._lock:
+                waiting = self._inflight.get(key)
+                if waiting is None:
+                    mine = self._inflight[key] = threading.Event()
+            if waiting is None:
+                break
+            waiting.wait()   # then re-read the cache; if the other call failed, this one tries itself
+        try:
+            return self._miss(task, p, user, model, key, t0, recorder)
+        finally:
+            with self._lock:
+                self._inflight.pop(key, None)
+            mine.set()
+
+    def _miss(self, task, p, user, model, key, t0, recorder):
         out, usage, err, retry_reasons = None, None, None, []
         loop = self._ensure_loop()
         agent = self._agent(p, p.tier)

@@ -122,6 +122,18 @@ class Settings:
             raise ValueError(f"reasoning must be none | low | medium | high, not {self.reasoning!r}")
         if self.standing not in ("judged", "noisy_or"):
             raise ValueError(f"standing must be 'judged' or 'noisy_or', not {self.standing!r}")
+        if self.new_hypothesis_score not in ("fit", "margin"):
+            raise ValueError(f"new_hypothesis_score must be 'fit' or 'margin', not {self.new_hypothesis_score!r}")
+        for name in ("relevance_threshold", "match_threshold", "proposed_weight", "unconfirmed_cap"):
+            v = getattr(self, name)
+            if not 0.0 <= v <= 1.0:
+                raise ValueError(f"{name} must be between 0 and 1, not {v}")
+        if not 0.0 <= self.temperature <= 2.0:
+            raise ValueError(f"temperature must be between 0 and 2, not {self.temperature}")
+        for name in ("max_trajectories", "max_baselines", "max_attached", "max_evidence", "sharpen_after", "concurrency", "max_tokens"):
+            v = getattr(self, name)
+            if not isinstance(v, int) or v < 1:
+                raise ValueError(f"{name} must be a whole number of at least 1, not {v!r}")
 
     @property
     def uses_real_llm(self) -> bool:

@@ -107,10 +107,23 @@ class Core:
             implementation=IMPLEMENTATION, implementation_version=VERSION,
             models=tuple(sorted({c.model for c in run.rec.calls})), prompts={c.task: c.prompt_version for c in run.rec.calls},
             mission_version=mission.version, operational_items=dict(sorted(run.read.items())),
-            input_hash=hashlib.sha256(json.dumps({"t": trajectory.model_dump(mode="json", by_alias=True), "scope": scope,
-                                                  "mission": mission.version}, sort_keys=True).encode()).hexdigest()[:16],
-            deterministic=True, calls=tuple(run.rec.calls))
+            # the whole input: trajectory, options, mission version and the full operational context (two calls that
+            # differ in any hypothesis or piece of evidence get different hashes), plus the settings that shape the output
+            input_hash=hashlib.sha256(json.dumps({"t": trajectory.model_dump(mode="json", by_alias=True), "scope": scope, "detail": detail,
+                                                  "mission": mission.version, "op": operational.model_dump(mode="json", by_alias=True),
+                                                  "config": self._config()}, sort_keys=True).encode()).hexdigest()[:16],
+            # replayable, not merely temperature 0: hosted models are not reproducible even at temperature 0, so only an
+            # answer built entirely from the cache or the offline fake can be reproduced exactly
+            deterministic=self.provider.name == "fake" or all(c.cached for c in run.rec.calls),
+            calls=tuple(run.rec.calls))
         return Assessment(groups=tuple(groups), pattern=trajectory.pattern, provenance=prov)
+
+    def _config(self) -> dict:
+        st = self.settings
+        return {"provider": self.provider.name, "model": st.model, "fast_model": st.fast_model, "standing": st.standing,
+                "temperature": st.temperature, "new_hypothesis_score": st.new_hypothesis_score,
+                **{k: getattr(st, k) for k in ("relevance_threshold", "match_threshold", "proposed_weight", "unconfirmed_cap", "max_trajectories",
+                                               "max_baselines", "max_attached", "max_evidence", "sharpen_after")}}
 
     # ================================================================ groups
     @staticmethod
