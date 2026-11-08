@@ -234,7 +234,8 @@ def run_scenario(core: Core, sc: Scenario, log=print, lookback: bool = True, win
                             log(f"  [{sc.id}] look-back {old.label} -> {h.id}: {e}")
                             continue
                         calls += b.provenance.calls
-                        kept = [g for g in b.groups if g.target.stance in ("supports", "weakens") and g.target.hypothesis.id == h.id]
+                        kept = [g for g in b.groups if g.target.stance in ("supports", "weakens")
+                                and (g.target.hypothesis.id == h.id or g.target.hypothesis.refines == h.id)]   # + a sharpening it caused
                         if not kept:
                             continue
                         b = b.model_copy(update={"groups": tuple(kept)})

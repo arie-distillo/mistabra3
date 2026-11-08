@@ -392,3 +392,16 @@ def test_assessment_sees_only_touched_and_closest_held_hypotheses(mission, op):
     d = next(x for x in seen if x["risk_text"].startswith("Hateful"))
     ids = [h["id"] for h in d["held_hypotheses"]]
     assert ids[0] == "H_centre" and "H_elm" in ids and not any(i.startswith("X") for i in ids) and len(ids) <= 6
+
+
+def test_a_given_held_hypothesis_is_sharpened_too_counting_inherited_facts(mission, op):
+    """The look-back re-submits an old clue with a hypothesis given; if that makes enough facts, the claim is sharpened.
+    For a refinement, the parent's facts count."""
+    from mistabra_core.types import Hypothesis
+    child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", author="system", status="proposed", refines="H_elm")
+    calls = []
+    over = {"episode.assess": {"given": {"stance": "supports", "fit": 0.6, "reach": 0.3}},
+            "hypothesis.sharpen": lambda d: (calls.append(d), {"sharper_claim": "Elm Street homes are mapped from a parked van at night"})[1]}
+    a = make_core(over).assess(mission, _with_facts(op, 2, [child]), TrajectoryInput(episode=ep(HOODED, eid="old"), hypothesis="H_elm2"))
+    assert len(calls) == 1 and calls[0]["claim"] == "A sharper Elm Street claim"
+    assert [g.target.hypothesis.refines for g in a.groups] == [None, "H_elm2"]

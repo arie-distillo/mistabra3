@@ -233,6 +233,8 @@ class Core:
             href = (HypothesisRef(origin="given", id=given_h.id, version=given_h.version, claim=given_h.claim, entities=given_h.entities,
                                   status=given_h.status) if given_h else HypothesisRef(origin="given", claim=given_claim, entities=tuple(v.entities)))
             entries.append(_Entry(href, "neutral" if v.stance == "unrelated" else v.stance, v))   # the analyst asked: always answered
+            if given_h is not None:   # a held hypothesis given with an episode (the other layer's look-back, too) may be sharpened
+                entries += self._sharpen(op, ep, risk, known, entries, {_norm(given_h.claim)}, run)
         else:
             seen = set()
             for v in out.stored:
@@ -308,14 +310,17 @@ class Core:
         first facts and then attaches every later, more telling fact to it unchanged ("a chemical leak near Mill Road"
         absorbed the plant's overdue backflow test and the pressure drops); an optional revised claim in the assessment
         was used 2 times in 799 verdicts. A sharper claim becomes a new hypothesis that refines the held one and inherits
-        its evidence (spec §5.2b). Hypotheses that already have a refinement are not asked again."""
+        its evidence (spec §5.2b). Hypotheses that already have a refinement are not asked again; their refinement is, once
+        it has the facts (inherited ones count). Also asked when a held hypothesis is given with an episode, so a clue the
+        other layer re-attaches in its look-back can still change the claim."""
         refined = {h.refines for h in known.values() if h.refines}
         cands = []
         for e in entries:
             h = known.get(e.href.id or "")
             if h is None or e.stance != "supports" or h.id in refined or h.status == "rejected":
                 continue
-            facts = [t for t in op.attached(h.id) if t.stance == "supports" and t.status != "rejected" and t.episode_id != ep.id]
+            pool = op.attached(h.id) + (op.attached(h.refines) if h.refines else [])   # a refinement counts what it inherited
+            facts = list({t.episode_id: t for t in pool if t.stance == "supports" and t.status != "rejected" and t.episode_id != ep.id}.values())
             if len(facts) + 1 >= self.settings.sharpen_after:
                 cands.append((e, h, facts))
 
