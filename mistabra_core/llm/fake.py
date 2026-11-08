@@ -237,6 +237,9 @@ class FakeProvider:
                         "rationale": f"If {claim}, the episode is a step toward: {d['risk_text']}", "baselines": self._baselines(ep, [], mb)})
         return {"relevant": relevant, "signal": out_signal if relevant else None, "stored": stored, "new": new}
 
+    def _lookback_select(self, d):
+        return {"indices": [e["index"] for e in d.get("episodes", [])][: d.get("max", 3)], "why": "fake: the most recent ones"}
+
     def _hypothesis_sharpen(self, d):
         return {"sharper_claim": None, "why": "fake: never sharpens"}
 
