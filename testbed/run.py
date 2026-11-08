@@ -46,7 +46,7 @@ HEADLINE = [
 
 def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4, lookback: bool = True) -> dict:
     from mistabra_core import Core, Settings
-    from mistabra_core.llm import LLMAuthError
+    from mistabra_core.llm import LLMAuthError, LLMBudgetError
     settings = Settings.from_env(**settings_overrides)
     core = Core(settings)
     scenarios = [s for s in discover() if not only or any(o in s.id for o in only)]
@@ -54,7 +54,7 @@ def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4, loo
     log(f"testbed provider={settings.provider} ({describe_key(settings.provider) if settings.uses_real_llm else 'offline'}) model={settings.model} fast={settings.fast_model} reasoning={settings.reasoning or 'default'} standing={settings.standing} "
         f"scenarios={len(scenarios)} steps={sum(len(s.steps) * (max(1, len(s.operational.hypotheses)) if s.per_hypothesis else 1) for s in scenarios)}")
     t0 = time.time()
-    stop = []
+    stop, budget_hit = [], []
 
     def one(i_sc):
         i, sc = i_sc
@@ -63,10 +63,14 @@ def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4, loo
         log(f"[{i}/{len(scenarios)}] {sc.id} ({sc.kind}{', control' if sc.control else ''}) — {len(sc.steps)} steps  [{time.time() - t0:.0f}s]")
         try:
             r = run_scenario(core, sc, log=log, lookback=lookback)
-            log(f"[{i}/{len(scenarios)}] {sc.id} done  [{time.time() - t0:.0f}s]")
+            log(f"[{i}/{len(scenarios)}] {sc.id} done  [{time.time() - t0:.0f}s, {core.gw.stats['calls']} model calls so far]")
             return r
         except LLMAuthError as e:
             stop.append(e)
+            return None
+        except LLMBudgetError as e:
+            budget_hit.append(e)
+            log(f"  [{sc.id}] stopped: {e}")
             return None
         except Exception as e:  # noqa: BLE001 — a failed scenario is reported, the run continues
             from .harness import ScenarioResult
@@ -75,12 +79,15 @@ def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4, loo
 
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:   # scenarios are independent; each keeps its steps in order
         results = list(ex.map(one, enumerate(scenarios, 1)))
+    if budget_hit:
+        log(f"BUDGET: {budget_hit[0]}. The report covers the {sum(r is not None for r in results)} scenarios that finished; "
+            f"answers so far are cached, so a rerun with a higher --max-calls continues where this one stopped.")
     if stop:
         log(f"STOPPED: the provider rejected the API key — {stop[0]}\n"
             f"Check the key in .env (MISTABRA_API_KEY, or the provider's own variable) belongs to provider '{settings.provider}'.")
         raise SystemExit(3)
     from . import grader
-    grade = grader.lexical() if core.provider.name == "fake" else grader.model(core.gw)
+    grade = grader.lexical() if core.provider.name == "fake" or budget_hit else grader.model(core.gw)
     metrics = all_metrics([r for r in results if r is not None and r.error is None], grade=grade)
     label = settings.standing + (" + margin score" if settings.new_hypothesis_score == "margin" else "")
     return {"settings": {"provider": core.provider.name, "model": settings.model, "fast_model": settings.fast_model, "standing": settings.standing,
@@ -146,6 +153,8 @@ def main(argv=None) -> int:
     ap.add_argument("--only", action="append", default=[], help="run scenarios whose id contains this text (repeatable)")
     ap.add_argument("--cache", help="SQLite file caching model outputs across runs")
     ap.add_argument("--jobs", type=int, default=4, help="scenarios run in parallel (default 4)")
+    ap.add_argument("--max-calls", type=int, default=1500,
+                    help="stop a run (one standing mode, one repeat) after this many model calls; cache hits are free (default 1500)")
     ap.add_argument("--compare-score", action="store_true",
                     help="also run with new hypotheses scored by margin over ordinary explanations (option B)")
     ap.add_argument("--no-lookback", action="store_true", help="do not re-submit earlier unattached episodes against new hypotheses")
@@ -176,6 +185,8 @@ def main(argv=None) -> int:
     calls = Path(a.out) / f"{stamp}-calls.jsonl"
     if a.live:
         over["call_log"] = calls                           # every model call, with prompt and output: the "why" behind the report
+    if a.live:
+        over["max_calls"] = a.max_calls
     if a.temperature is not None:
         over["temperature"] = a.temperature
     base = a.standing or os.environ.get("MISTABRA_STANDING", "noisy_or")

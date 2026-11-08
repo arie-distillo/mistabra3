@@ -22,6 +22,10 @@ class LLMOutputError(LLMError):
     """The model did not produce output matching the schema, even after the validation retries."""
 class LLMAuthError(LLMError):
     """The provider rejected the credentials (HTTP 401/403). Never retried; nothing else will work either."""
+class LLMBudgetError(LLMError):
+    """Settings.max_calls reached: no further model calls are made."""
+
+
 class LLMTransportError(LLMError):
     """Network, rate-limit or server failure. Retried with backoff by the gateway."""
 

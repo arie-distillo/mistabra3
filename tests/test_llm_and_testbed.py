@@ -125,7 +125,7 @@ def test_harness_keeps_and_reuses(tmp_path):
         if held:
             return {"stored": [{"hypothesis_id": held[0]["id"], "stance": "supports", "confidence": 0.9, "fit": 0.4, "reach": 0.3}]}
         return fake._episode_assess(d)
-    triage = lambda d: {**fake._episode_triage(d), "relevant": True, "confidence": 0.9}
+    triage = lambda d: {**fake._episode_triage(d), "relevant": True, "confidence": 0.9, "touches": [h["id"] for h in d["held_hypotheses"]]}
     res = run_scenario(Core(Settings(force_fake=True), provider=FakeProvider({"episode.assess": assess, "episode.triage": triage})), sc,
                        log=lambda m: None)
     assert len(res.steps) == 2 and all(s.groups for s in res.steps)
@@ -364,3 +364,14 @@ def test_settings_reject_out_of_range_values():
                 {"new_hypothesis_score": "both"}):
         with _p.raises(ValueError):
             Settings(force_fake=True, **bad)
+
+
+def test_max_calls_stops_further_model_calls():
+    import pytest as _p
+    from mistabra_core.llm import LLMBudgetError
+    g = Gateway(Settings(force_fake=True, max_calls=2), FakeProvider())
+    for i in range(2):
+        g.call("radar.derive", {"risk_text": f"r{i}"})
+    g.call("radar.derive", {"risk_text": "r0"})            # a cache hit is free
+    with _p.raises(LLMBudgetError):
+        g.call("radar.derive", {"risk_text": "r9"})

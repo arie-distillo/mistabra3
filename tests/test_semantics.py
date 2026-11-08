@@ -378,3 +378,17 @@ def test_input_hash_covers_the_operational_context_and_detail(mission, op):
     b = core.assess(mission, op.model_copy(update={"hypotheses": op.hypotheses[:1]}), ti).provenance.input_hash
     c = core.assess(mission, op, ti, detail="scores").provenance.input_hash
     assert a == core.assess(mission, op, ti).provenance.input_hash and len({a, b, c}) == 3
+
+
+def test_assessment_sees_only_touched_and_closest_held_hypotheses(mission, op):
+    from mistabra_core.types import Hypothesis
+    many = tuple(Hypothesis(id=f"X{i}", risk_id="attack", claim=f"Unrelated mechanism number {i} about parking fines", author="system",
+                            status="proposed") for i in range(20))
+    seen = []
+    over = {"episode.triage": {"relevant": True, "confidence": 0.9, "touches": ["H_centre"], "content": {"summary": "s"}},
+            "episode.assess": lambda d: (seen.append(d), {"relevant": False})[1]}
+    make_core(over).assess(mission, op.model_copy(update={"hypotheses": op.hypotheses + many}),
+                           TrajectoryInput(episode=ep("Someone photographed homes on Elm Street at night.")))
+    d = next(x for x in seen if x["risk_text"].startswith("Hateful"))
+    ids = [h["id"] for h in d["held_hypotheses"]]
+    assert ids[0] == "H_centre" and "H_elm" in ids and not any(i.startswith("X") for i in ids) and len(ids) <= 6

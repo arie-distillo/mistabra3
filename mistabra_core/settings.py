@@ -74,6 +74,8 @@ class Settings:
     concurrency: int = 8                    # model requests in flight at once (independent calls run in parallel)
 
     standing: str = "noisy_or"              # noisy_or (computed; default since 2026-11-06) | judged (the reasoning model weighs them)
+    max_held: int = 6                       # held hypotheses shown to the assessment: those triage flagged, then the closest
+    max_calls: int | None = None            # stop with an error after this many model calls (cache hits are free)
     sharpen_after: int = 3                  # supporting facts (this episode included) before a held hypothesis is sharpened
     max_evidence: int = 6                   # facts already attached to a hypothesis shown when assessing a new episode
     new_hypothesis_score: str = "fit"        # fit (one formula for all) | margin (option B: a hypothesis written from this
@@ -130,7 +132,7 @@ class Settings:
                 raise ValueError(f"{name} must be between 0 and 1, not {v}")
         if not 0.0 <= self.temperature <= 2.0:
             raise ValueError(f"temperature must be between 0 and 2, not {self.temperature}")
-        for name in ("max_trajectories", "max_baselines", "max_attached", "max_evidence", "sharpen_after", "concurrency", "max_tokens"):
+        for name in ("max_trajectories", "max_baselines", "max_attached", "max_evidence", "sharpen_after", "concurrency", "max_tokens", "max_held"):
             v = getattr(self, name)
             if not isinstance(v, int) or v < 1:
                 raise ValueError(f"{name} must be a whole number of at least 1, not {v!r}")

@@ -25,7 +25,7 @@ from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError, UnexpectedMode
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 
 from ..types import LLMCallRecord
-from .base import OUTPUT_RETRIES, LLMAuthError, LLMError, LLMOutputError, LLMTransportError
+from .base import LLMBudgetError, OUTPUT_RETRIES, LLMAuthError, LLMError, LLMOutputError, LLMTransportError
 from .prompts import PROMPTS
 
 
@@ -166,6 +166,10 @@ class Gateway:
             mine.set()
 
     def _miss(self, task, p, user, model, key, t0, recorder):
+        cap = getattr(self.settings, "max_calls", None)
+        with self._lock:
+            if cap is not None and self.stats["calls"] + self.stats["errors"] >= cap:
+                raise LLMBudgetError(f"{task}: the limit of {cap} model calls is reached (Settings.max_calls / --max-calls)")
         out, usage, err, retry_reasons = None, None, None, []
         loop = self._ensure_loop()
         agent = self._agent(p, p.tier)

@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mistabra_core.llm.base import LLMOutputError
+from mistabra_core.llm.prompts import Out, Prompt
+from pydantic import Field
 from mistabra_core import Core
 from mistabra_core.types import (Assessment, Hypothesis, HypothesisRef, OperationalContext, StoredTrajectory, TrajectoryInput)
 
@@ -156,6 +158,29 @@ class ScenarioResult:
     error: str | None = None
 
 
+class _Pick(Out):
+    indices: list[int] = Field(default_factory=list)
+    why: str = ""
+
+
+LOOKBACK = Prompt("lookback.select", "1", "You help an intelligence analyst re-read earlier reports in the light of a new hypothesis.",
+                  "A new hypothesis has just been formed. Below are earlier episodes that, when they arrived, bore on nothing. Which of "
+                  "them could bear on this hypothesis, for or against it, now that it exists? Pick only those with a concrete link "
+                  "(the same place, system, actor, object or mechanism); most will have none. Return their indices, best first, at "
+                  "most `max`. Schema: {\"indices\":[int],\"why\":str}", _Pick, "fast")
+LOOKBACK_PER_HYPOTHESIS = 3
+LOOKBACK_PER_SCENARIO = 12
+
+
+def _pick(core: Core, h: Hypothesis, risk_text: str, cands: list) -> list:
+    """One cheap fast-model call picks which earlier episodes to re-assess (the full re-assessment costs 2-3 calls each)."""
+    if core.provider.name == "fake" and LOOKBACK.id not in getattr(core.provider, "overrides", {}):
+        return cands[:LOOKBACK_PER_HYPOTHESIS]
+    out = core.gw.call(LOOKBACK.id, {"risk_text": risk_text, "hypothesis": h.claim, "max": LOOKBACK_PER_HYPOTHESIS,
+                                     "episodes": [{"index": i, "text": c.episode.text} for i, c in enumerate(cands)]}, prompt=LOOKBACK)
+    return [cands[i] for i in dict.fromkeys(out.indices) if 0 <= i < len(cands)][:LOOKBACK_PER_HYPOTHESIS]
+
+
 def _rec(g, hid) -> GroupRec:
     t = g.target
     return GroupRec(risk=t.risk.risk_id, hypothesis_id=hid, origin=t.hypothesis.origin, claim=t.hypothesis.claim,
@@ -172,6 +197,7 @@ def run_scenario(core: Core, sc: Scenario, log=print, lookback: bool = True, win
     last_standing: dict[str, float] = {}
     initial = [h.id for h in sc.operational.hypotheses if h.role == "primary"]
     unattached: list[Step] = []            # earlier episodes that bore on nothing, for the look-back
+    budget = LOOKBACK_PER_SCENARIO         # re-assessments per scenario: each costs 2-3 model calls
     t0 = time.time()
     for i, step in enumerate(sc.steps, 1):
         runs = [step.model_copy(update={"hypothesis": hid}) for hid in initial] if sc.per_hypothesis else [step]
@@ -196,9 +222,12 @@ def run_scenario(core: Core, sc: Scenario, log=print, lookback: bool = True, win
             calls = list(a.provenance.calls)
             looked = []
             new = [h for h in layer.hyps if h.id not in before and h.role == "primary" and h.status != "rejected"]
-            if lookback and not sc.per_hypothesis and new and unattached:
+            if lookback and not sc.per_hypothesis and new and unattached and budget > 0:
+                risk_text = {r.id: r.text for r in sc.mission.risks}
                 for h in new:
-                    for old in list(unattached[-window:]):
+                    picked = _pick(core, h, risk_text.get(h.risk_id, ""), unattached[-window:])[:budget]
+                    budget -= len(picked)
+                    for old in picked:
                         try:
                             b = core.assess(sc.mission, layer.op, TrajectoryInput(episode=old.episode, hypothesis=h.id, risk=h.risk_id))
                         except LLMOutputError as e:

@@ -182,6 +182,7 @@ class Core:
         run.saw(*held)
 
         # 1. triage → signal
+        touches: list[str] = []
         if ti.signal is not None:
             signal = SignalOut(content=ti.signal.content or SignalContent(summary=ti.signal.note), origin="given")
         else:
@@ -190,6 +191,7 @@ class Core:
                 "risk_text": risk.text, "episode": {"text": ep.text, "source": ep.source},
                 "radars": [{"index": i, "query": q} for i, q in enumerate(queries)],
                 "held_hypotheses": [{"id": h.id, "claim": h.claim, "status": h.status} for h in held]}, recorder=run.rec)
+            touches = list(tr.touches)
             relevant = tr.relevant and tr.confidence >= self.settings.relevance_threshold
             if not relevant and not pointed:
                 return []
@@ -219,7 +221,7 @@ class Core:
             "given_hypothesis": None if given_claim is None else {
                 "claim": given_claim, "evidence": evidence(given_h.id) if given_h else [],
                 "baselines": [{"id": b.id, "claim": b.claim} for b in baselines_of.get(given_h.id if given_h else "", [])]},
-            "held_hypotheses": [] if given_claim else [held_view(h) for h in held],
+            "held_hypotheses": [] if given_claim else [held_view(h) for h in self._focus(held, touches, ep.text)],
             "precedents": [{"claim": known[t.hypothesis_id].claim if t.hypothesis_id in known else "", "rationale": t.rationale,
                             "fit": t.fit, "reach": t.reach} for t in precedents],
             "max_new": 0 if given_claim else self.settings.max_trajectories,
@@ -283,6 +285,21 @@ class Core:
         anchors = [h.standing if e.href.id and (h := op.hypothesis(e.href.id)) is not None else None for e in entries]
         standings = self._standings(ti, risk, built, items, anchors, run)
         return [AssessmentGroup(target=t, baselines=tuple(b), standing=st) for (t, b), st in zip(built, standings)]
+
+    def _focus(self, held: list[Hypothesis], touches: list[str], text: str) -> list[Hypothesis]:
+        """The held hypotheses the assessment sees: those triage said the episode touches, topped up with the ones closest
+        in wording, at most `max_held`. All of them made prompts grow with every hypothesis a scenario accumulated (25k
+        characters by mid-scenario) and answers outgrow max_tokens (a verdict per hypothesis), which caused most
+        validation retries and most of the cost. A restatement of an unseen held claim is still caught by claim matching."""
+        n = self.settings.max_held
+        by_id = {h.id: h for h in held}
+        out = [by_id[i] for i in dict.fromkeys(touches) if i in by_id][:n]
+        if len(out) < n:
+            words = {w.lower() for w in _TOKEN.findall(text) if len(w) > 3}
+            rest = sorted((h for h in held if h not in out and h.status != "rejected"),
+                          key=lambda h: -len(words & {w.lower() for w in _TOKEN.findall(h.claim) if len(w) > 3}))
+            out += [h for h in rest if words & {w.lower() for w in _TOKEN.findall(h.claim) if len(w) > 3}][: n - len(out)]
+        return out
 
     # ---------------------------------------------------------------- sharpening
     def _sharpen(self, op: OperationalContext, ep: Episode, risk: Risk, known: dict, entries: list, seen: set, run: _Run) -> list:
