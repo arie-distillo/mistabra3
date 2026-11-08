@@ -109,6 +109,7 @@ class Settings:
             concurrency=int(e.get("MISTABRA_CONCURRENCY") or 8),
             temperature=float(e.get("MISTABRA_TEMPERATURE") or 0.0),
             new_hypothesis_score=e.get("MISTABRA_NEW_HYPOTHESIS_SCORE", "fit"),
+            max_calls=int(e["MISTABRA_MAX_CALLS"]) if e.get("MISTABRA_MAX_CALLS") else None,
         )
         for k, v in overrides.items():
             setattr(s, k, v)

@@ -405,3 +405,29 @@
     missing_hypothesis: null
     missing_hypothesis_alternatives: []
     cluster_members: []
+
+# ---------------------------------------------------------------- the public quickstart example (examples/cold_store.py)
+
+- id: miss_17
+  capability: missing_hypothesis
+  control: false
+  domain: cold_storage
+  note: "The README's flagship example: kept here so every live run measures it."
+  given_hypotheses:
+  - Stock spoils because one of the refrigeration compressors is failing.
+  - Stock spoils because staff leave the cold-room doors open during busy shifts.
+  data_points:
+  - {id: d1, role: distractor, text: "The quarterly compressor service found both compressors within specification and refrigerant pressure normal."}
+  - {id: d2, role: distractor, text: "Door-open alarms in the last month were all during day shifts, and every door was closed again within two minutes."}
+  - {id: d3, role: cluster_member, text: "Facilities signed a new night cleaning contractor in March; the crew works from midnight to 4 a.m."}
+  - {id: d4, role: distractor, text: "The delivery van to the Eastside store now takes the ring road because of roadworks."}
+  - {id: d5, role: cluster_member, text: "The temperature logger in Cold Room 2 shows gaps of 40 to 90 minutes between 1 and 3 a.m. on four nights in the last two weeks."}
+  - {id: d6, role: cluster_member, text: "The cleaners charge their floor scrubbers from the socket by Cold Room 2's door, the only free socket on that wall."}
+  - {id: d7, role: cluster_member, text: "Every spoiled batch in the last two weeks came from Cold Room 2."}
+  - {id: d8, role: distractor, text: "The canteen added a vegetarian option to the lunch menu."}
+  ground_truth:
+    refuting_sets: []
+    missing_hypothesis: The night cleaning crew unplugs Cold Room 2's refrigeration controller to charge their floor scrubbers, so the room warms for an hour or more each night.
+    missing_hypothesis_alternatives:
+    - Cold Room 2's controller loses power at night because the cleaners use its socket to charge their equipment.
+    cluster_members: [d3, d5, d6, d7]
