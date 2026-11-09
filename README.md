@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/mistabra-logo.png" alt="mistabra — turning intuition into reasoning" width="220"></p>
+<p align="center"><img src="docs/assets/mistabra-banner.png" alt="mistabra — turning intuition into reasoning" width="100%"></p>
 
 <p align="center"><b>Analyst co-pilot turning intuition into reasoning.</b></p>
 
