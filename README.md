@@ -1,6 +1,6 @@
-# Mistabra
+<p align="center"><img src="docs/assets/mistabra-logo.png" alt="mistabra — turning intuition into reasoning" width="220"></p>
 
-**Analyst co-pilot turning intuition into reasoning.**
+<p align="center"><b>Analyst co-pilot turning intuition into reasoning.</b></p>
 
 Experienced analysts know more than they can tell: their tacit knowledge flags an observation as significant long
 before they can explain why. Mistabra treats that intuition as a first-class input. It builds the reasoning behind
@@ -11,25 +11,7 @@ it, and keeps testing it, alongside alternative hypotheses, against every new ob
 
 ## How it works: who does what
 
-```mermaid
-%%{init: {"sequence": {"mirrorActors": false}}}%%
-sequenceDiagram
-    participant S as Observation sources
-    participant M as Mistabra
-    actor A as Analyst
-    A->>M: mission: goals, documents, risks
-    Note over M: works out what to watch for, per risk
-    loop every new observation
-        S->>M: observation
-        M-->>A: relevant or not · to which hypothesis ·<br/>how strongly · against which baseline
-        opt the analyst has an intuition
-            A->>M: "this matters for hypothesis H"<br/>or "this detail is a signal"
-            M-->>A: the missing link or the missing hypothesis,<br/>tested against baselines
-        end
-    end
-    Note over M: weak signals combine<br/>contradicted hypotheses weaken<br/>new hypotheses re-read old observations
-    A->>M: confirm or reject, with a reason
-```
+![How it works: observation sources feed Mistabra, which builds trajectories tested against baselines, turns the analyst's intuitions into Lambda signals and Lambda hypotheses, and returns reasoning; the analyst sends the mission, intuitions and decisions](docs/assets/how-it-works.png)
 
 | | The analyst | Mistabra |
 | --- | --- | --- |
