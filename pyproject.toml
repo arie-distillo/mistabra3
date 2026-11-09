@@ -2,6 +2,8 @@
 name = "mistabra"
 version = "0.4.0"
 description = "Mistabra — an analyst's co-pilot that turns intuition into reasoning"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2", "pydantic-ai-slim[openai,anthropic]>=1.0"]
 
@@ -10,7 +12,7 @@ testbed = ["pyyaml>=6"]
 dev = ["pytest>=8", "pyyaml>=6"]
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

@@ -172,4 +172,4 @@ beliefs, identity or intentions from their ordinary behaviour.
 
 ## License
 
-To be decided before the first public release.
+[Apache License 2.0](LICENSE).
