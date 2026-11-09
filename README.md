@@ -1,101 +1,135 @@
-# Mistabra Core
+# Mistabra
 
-An analyst's co-pilot that turns intuition into reasoning: the reasoning layer.
+**Analyst co-pilot turning intuition into reasoning.**
 
-Analysts receive a stream of short reports. Most mean nothing; a few matter, often only in combination, and sometimes
-they point to an explanation nobody has stated yet. Mistabra Core reads one report (an *episode*) at a time and asks:
-does it bear on a risk, through which hypothesis, how strongly, and against which ordinary explanations? It keeps
-weak signals instead of dropping them, lets several weak ones add up, weakens hypotheses that the evidence contradicts,
-and articulates new hypotheses when the evidence points somewhere the analyst has not looked.
+Experienced analysts know more than they can tell: their tacit knowledge flags an observation as significant long
+before they can explain why. Mistabra treats that intuition as a first-class input. It builds the reasoning behind
+it, and keeps testing it, alongside alternative hypotheses, against every new observation.
 
-> **Status: research preview (0.x).** The API may still change. The method is measured on a testbed of synthetic
-> cases (see [Results](#results)), not yet on real analyst work. Scores and standings are ordered strengths for an
-> analyst to weigh, not probabilities. Read [Limitations](#limitations) before relying on it.
+> **Research preview (0.x).** The API may still change. The method is measured on synthetic cases only, not yet on
+> real analyst work; see [Results](#results) and [Limitations](#limitations).
+
+## How it works: who does what
+
+```mermaid
+sequenceDiagram
+    actor A as Analyst
+    participant S as Observation sources
+    participant M as Mistabra
+    A->>M: mission: goals, documents, risks
+    Note over M: works out what to watch for, per risk
+    loop every new observation
+        S->>M: observation
+        M-->>A: relevant or not · to which hypothesis · how strongly · against which baseline
+        opt the analyst has an intuition
+            A->>M: "this matters for hypothesis H" or "this detail is a signal"
+            M-->>A: the missing link or the missing hypothesis, tested against baselines
+        end
+    end
+    Note over M: weak signals combine · contradicted hypotheses weaken · new hypotheses re-read earlier observations
+    A->>M: confirm or reject, with a reason
+```
+
+| | The analyst | Mistabra |
+| --- | --- | --- |
+| **Set up** | describes the mission: goals, documents, risks | works out what to watch for under each risk |
+| **Observations arrive** | reviews them and raises an intuition: "this matters for H", or "this detail is a signal" | assesses each observation against all hypotheses; for an intuition, articulates the reasoning behind it |
+| **Over time** | adds or drops hypotheses | combines weak signals, weakens contradicted hypotheses, proposes new ones, re-reads earlier observations against them |
+| **Decide** | confirms or rejects, and says why | records who, when and why, alongside what it said at the time |
+
+Mistabra proposes; the analyst decides.
+
+## Two key ideas
+
+**Intuition is an input.** The analyst does not need to justify an intuition before submitting it:
+
+- *"This observation matters for hypothesis H, I can't say why."* Mistabra articulates the connecting signal: a
+  **Lambda signal**.
+- *"This detail is a signal, I don't know of what."* Mistabra proposes the hypothesis behind it: a **Lambda
+  hypothesis**, when no existing one fits.
+
+Mistabra may also raise both on its own, when an observation points somewhere nobody has looked.
+
+**Every hypothesis must beat its baselines, and Mistabra writes them itself.** Weighing competing hypotheses is
+established practice, but the analyst usually chooses which alternatives to list, and the ones we don't think of are
+the ones that trap us. Mistabra creates the ordinary explanation of the same facts for every hypothesis an
+observation supports, and a signal counts only by how much better it fits. This is what keeps the first idea honest:
+reasoning built for an intuition without a challenge would only make confirmation bias more convincing.
+
+## Terms
+
+| Term | Meaning |
+| --- | --- |
+| Observation | one incoming piece of information (`Episode` in the code) |
+| Risk | the outcome to prevent or detect |
+| Hypothesis | a possible explanation that leads toward a risk |
+| Signal | what in an observation bears on a hypothesis |
+| Baseline | the ordinary explanation of the same facts |
+| Trajectory | observation → signal → hypothesis → risk, with its reasoning and a score |
+
+## Why Mistabra
+
+| | Chat assistant | ACH tools | Alerting rules | **Mistabra** |
+| --- | --- | --- | --- | --- |
+| Takes an analyst's unexplained intuition as input | ad hoc, if asked | no | no | **yes** |
+| Generates alternative explanations itself, every time | if asked | analyst lists them | no | **yes, always** |
+| Keeps weak signals and combines them | no | manual | thresholds | **yes** |
+| Looks beyond the hypotheses already held | no | no | fixed rules | **yes** |
+| Records reasoning and decisions | no | partly | alert log | **yes** |
 
 ## Quickstart
 
 ```bash
 pip install -e ".[dev]"
-cp .env.example .env              # choose a provider and model, add your key
-python examples/cold_store.py     # or --offline: the fake model, shows the flow only
+cp .env.example .env              # provider, model, key (local models supported)
+python examples/cold_store.py     # --offline runs it with a fake model: shows the flow, not the reasoning
 ```
-
-[`examples/cold_store.py`](examples/cold_store.py): a warehouse keeps losing chilled stock. The analyst suspects a
-failing compressor or doors left open. Eight reports arrive: the compressors are fine, the doors are closed, a new
-night cleaning crew started in March, one cold room's temperature log has gaps between 1 and 3 a.m., the cleaners
-charge their scrubbers from the socket next to that room's controller, every spoiled batch came from that room, plus
-two irrelevant reports. Mistabra weakens both of the analyst's hypotheses, proposes the one nobody stated (the
-controller is unplugged at night), and builds its standing as the clues combine.
 
 ```python
-from mistabra.casebook import Casebook
 from mistabra.core import Core, Episode, Settings
+from mistabra.casebook import Casebook
 
-case = Casebook(Core(Settings.from_env()), mission, path="case.sqlite")   # keeps the case between calls
-case.add_hypothesis("Stock spoils because a compressor is failing.", risk="spoilage")
+case = Casebook(Core(Settings.from_env()), mission, path="case.sqlite")   # mission: your documents and risks
+h = case.add_hypothesis("Cold Room 2's controller loses power at night.", risk="spoilage")
 
-got = case.ingest(Episode(id="e5", text="The temperature log in Cold Room 2 shows gaps between 1 and 3 a.m."))
-for g, hid in zip(got.assessment.groups, got.hypothesis_ids):
-    print(g.target.stance, hid, g.target.score, g.standing.value, g.target.hypothesis.claim)
+# an observation arrives: Mistabra assesses it against every hypothesis
+case.ingest(Episode(id="e1", text="Compressor service found all three units within spec."))
 
-case.confirm(got.trajectories[0], by="analyst", note="checked the logger")   # analyst decisions are recorded
-case.export("feedback.jsonl")                                                # decisions joined with what Mistabra said
+# an intuition: "this matters for h, I can't say why"
+got = case.ingest(Episode(id="e3", text="A new night cleaning crew started in March; it works midnight to 4 a.m."),
+                  hypothesis=h)
+g = got.assessment.groups[0]
+print(g.target.lambda_signal, g.target.signal, g.target.score)    # True, the signal Mistabra articulated, its score
+print([b.hypothesis.claim for b in g.baselines])                  # the baselines it had to beat
+
+case.confirm(got.trajectories[0], by="analyst", note="checked the socket")   # recorded with who, when and why
 ```
 
-## How it works
+**The example** ([`examples/cold_store.py`](examples/cold_store.py)): a warehouse keeps losing chilled stock. The
+analyst suspects the compressors or open doors. Eight observations arrive. Mistabra weakens both hypotheses and
+proposes what nobody stated: the cleaners unplug Cold Room 2's controller at night to charge their scrubbers.
 
-Two parts:
+## Where it fits
 
-- **`Core.assess(mission, operational, trajectory)`**: one stateless call per episode
-  ([spec](docs/mistabra_core_api_v3.md)). The *mission context* is what the analyst sets up: documents and risks.
-  The *operational context* is the case so far: hypotheses and the trajectories attached to them. The trajectory
-  input is the episode, optionally with the signal, hypothesis or risk the analyst already sees in it. The result is
-  one group per hypothesis the episode bears on: the trajectory (episode → signal → hypothesis → risk) with its
-  stance (supports / weakens / neutral), `score` (this episode alone), the competing ordinary explanations, and
-  `standing` (the hypothesis given everything attached, before and after this episode).
-- **`Casebook`**: keeps the case between calls. It stores what the core returns, re-reads earlier episodes when a new
-  hypothesis appears (look-back), records analyst decisions with who, when and why, persists to SQLite, and exports
-  the decisions with the assessments they concern.
+Incident and quality investigations, fraud and compliance, supply-chain disruption, threat intelligence: anywhere
+observations pile up, most mean nothing, and the few that matter often matter only together.
 
-Per episode and risk, the core makes 1 model call if the episode is irrelevant and 2-4 if it is relevant:
+## Architecture
 
-1. **Triage** (fast model): is the episode relevant, directly or through a held hypothesis, and which *radar* does it
-   answer? Radars are derived once per mission from the risk and the documents only, never from current hypotheses,
-   so the layer does not look only where the analyst already looks.
-2. **Assessment** (reasoning model): a verdict on each held hypothesis it touches, at most two new hypotheses for
-   mechanisms none of them covers, and the ordinary explanations of each.
-3. **Sharpening** (reasoning model, when a hypothesis has three supporting facts): do the facts together show a more
-   specific mechanism? A sharper claim becomes a refinement that inherits the evidence.
-4. **Standing**: computed by noisy-OR with safeguards (support never lowers it, counter-evidence never raises it,
-   at most 0.8 until the analyst confirms something), or optionally judged by the reasoning model.
+Two layers:
 
-Every element of a trajectory says how it came to be (`origin`: given by the analyst, predefined, i.e. matched to a
-radar or stored hypothesis, or articulated by the layer). An articulated signal or hypothesis is a *Lambda* one:
-something nobody had stated. [The glossary](https://claude.ai/artifact/UomNUKdAnmSzKYnWQKMdei) explains every term.
+- **`mistabra.core`** assesses one observation at a time and keeps no state ([spec](docs/mistabra_core_api_v3.md)).
+- **`mistabra.casebook`** keeps the case between calls, re-reads earlier observations when a new hypothesis appears,
+  and records the analyst's decisions (SQLite or in memory).
 
-## Models
-
-Any of: Anthropic, OpenAI, OpenRouter, or any OpenAI-compatible endpoint, including local servers (Ollama, vLLM,
-llama.cpp) for data that must not leave your machine. Episodes and mission documents are sent to the provider you
-configure.
-
-```bash
-MISTABRA_PROVIDER=openrouter          # anthropic | openai | openrouter | fake
-MISTABRA_MODEL=qwen/qwen3.5-27b       # reasoning tier
-MISTABRA_FAST_MODEL=qwen/qwen3.5-flash-02-23
-MISTABRA_API_KEY=...
-MISTABRA_BASE_URL=http://localhost:11434/v1   # with MISTABRA_PROVIDER=openai: a local OpenAI-compatible server
-MISTABRA_MAX_CALLS=1500               # optional: stop after this many model calls
-```
-
-All calls go through PydanticAI: each answer must fit a schema, and an invalid one is sent back with the error (up
-to three times). Answers are cached by their exact input (`cache_path`), so identical inputs are not paid for twice.
+Models: Anthropic, OpenAI, OpenRouter, or any OpenAI-compatible endpoint, including local servers (Ollama, vLLM,
+llama.cpp) for data that must not leave your machine. Observations and mission documents are sent to the provider
+you configure. Every model answer must fit a schema, and answers are cached by input.
 
 ## Results
 
-Measured on the testbed (`python -m testbed.run --live --repeat 3`) on 2026-11-08, with Qwen 3.5 27B (reasoning)
-and Qwen 3.5 Flash (fast) through OpenRouter, three independent runs. The cases are synthetic, written for the
-testbed; ranges are min-max over the runs.
+Measured on the testbed on 2026-11-08 with Qwen 3.5 27B (reasoning) and Qwen 3.5 Flash (fast) through OpenRouter,
+three independent runs. The cases are synthetic, written for the testbed; ranges are min-max over the runs.
 
 | Capability | Measure | Result |
 | --- | --- | --- |
@@ -103,25 +137,26 @@ testbed; ranges are min-max over the runs.
 | Find the cause the analyst missed | 16 cases: same mechanism as the answer key / at least partly / reaching standing 0.5 | 11-14 / 15-16 / 9-10 |
 | No false alarms | 6 control cases where nothing is missing: an established new cause | 0 in every run |
 | Combine facts that only matter together | refuted vs supported analyst hypotheses (AUROC) | 1.0 |
-| Combine weak signals | two weak episodes reaching standing 0.4 together | 2 of 3 runs |
+| Combine weak signals | two weak observations reaching standing 0.4 together | 2 of 3 runs |
 | Match instead of duplicating; stable under paraphrase; no build-up from noise | | pass in every run |
 
-Cost and speed with that setup: a full pass over the 38 scenarios takes about 10 minutes and 400 model calls; an
-irrelevant episode takes about 2 s, a relevant one about 15 s.
+A full pass over the 38 scenarios takes about 10 minutes and 400 model calls; an irrelevant observation takes about
+2 s, a relevant one about 15 s. How to run and extend the testbed: [docs/testbed.md](docs/testbed.md).
 
 ## Limitations
 
 - **Synthetic evaluation.** The cases and answer keys were written by the developers. The numbers show whether a
   change helps or hurts; they do not show that the method is right on real work. A blinded evaluation with domain
-  analysts on representative data has not been done yet.
+  analysts has not been done yet.
+- **Intuitions are checked, not yet measured.** The tests check that an analyst's intuition produces a Lambda signal
+  or a Lambda hypothesis when it should; how often the articulated reasoning is right has not been measured.
 - **Run-to-run variance.** Hosted models are not reproducible even at temperature 0: the same case can be solved in
-  one run and missed in the next (11 to 14 of 16 above). Judge changes over several runs.
-- **Not probabilities.** Score and standing order things by strength; the bands (weak from 0.2, strong from 0.4) are
-  a convention calibrated on a small labelled set.
-- **Known failure patterns:** a vague hypothesis formed early can absorb later, more specific evidence (sharpening
-  helps, not always); a routine-looking first clue may be missed until a hypothesis gives it meaning (the look-back
-  helps); weak single episodes sit close to the band boundaries.
-- **Cost grows with risks.** Each risk triages each episode separately.
+  one run and missed in the next.
+- **Not probabilities.** Scores order things by strength; the bands (weak from 0.2, strong from 0.4) are a convention
+  calibrated on a small labelled set.
+- **Known failure patterns.** A vague hypothesis formed early can absorb later, more specific evidence; a
+  routine-looking first clue may be missed until a hypothesis gives it meaning.
+- **Cost grows with risks.** Each risk is checked against each observation separately.
 
 ## Responsible use
 
@@ -130,45 +165,10 @@ articulated hypothesis is a prompt for human judgment, never evidence on its own
 against a person. Do not use it to profile or monitor individuals or groups, or to infer anything about a person's
 beliefs, identity or intentions from their ordinary behaviour.
 
-## Testbed
+## Documentation
 
-```bash
-pytest                                              # functional tests, offline, about 10 s
-python -m testbed.run                               # every scenario with the fake model: proves the plumbing
-python -m testbed.run --live --repeat 3 --cache .cache/m.sqlite      # the measurements, with run-to-run spread
-python -m testbed.run --live --compare              # noisy-OR vs model-judged standing on the same answers
-python -m testbed.run --live --only miss_ --jobs 6  # a subset, scenarios in parallel
-```
-
-Each run writes `testbed/reports/<stamp>-*.json` and `.md`, plus `<stamp>-calls.jsonl` with every model prompt and
-answer. `--max-calls` (default 1500 per run) stops a run that grows beyond budget.
-
-| Id | What it measures | Cases |
-| --- | --- | --- |
-| A1 | score lands in labelled bands; positives above hard negatives | a labelled set of 31 episodes, authored scenarios |
-| A2 | the missing hypothesis is articulated and established; no false alarms in controls | `miss_01`-`miss_17`, `miss_ctrl_01`-`06` |
-| A3 | weak episodes combine; facts that refute only together lower a stated hypothesis | flood pair, `conj_01`-`06`, `conj_ctrl_*` |
-| A4 | a claim that repeats a stored hypothesis is matched to it | flood pair, analyst input patterns |
-| A5 | score spread across paraphrases of one episode | stability |
-| A6 | ordinary episodes do not build a hypothesis from the layer's own proposals | noise stream |
-| R1 | standing orders competing hypotheses as an ACH answer key does | burnt bread ACH case |
-
-## Layout
-
-```
-mistabra/             the library
-  core/               the reasoning layer (stateless)
-    engine.py         assess(): triage, assessment, sharpening, score, standing
-    types.py          the API types
-    scoring.py        score formula, noisy-OR standing
-    settings.py       provider, models, thresholds, limits
-    llm/              model access (PydanticAI), cache, call log, prompts, offline fake model
-  casebook.py         the layer above: keeps a case, look-back, analyst decisions, export, SQLite
-examples/             cold_store.py, the quickstart
-testbed/              scenarios, adapters for case files, runner, metrics, reports
-tests/                functional tests (offline)
-docs/                 the API spec
-```
+- [API spec](docs/mistabra_core_api_v3.md): the core layer's single call, its inputs and outputs
+- [Testbed and code layout](docs/testbed.md): scenarios, metrics, how to run them, where things are
 
 ## License
 
