@@ -12,21 +12,22 @@ it, and keeps testing it, alongside alternative hypotheses, against every new ob
 ## How it works: who does what
 
 ```mermaid
+%%{init: {"sequence": {"mirrorActors": false}}}%%
 sequenceDiagram
-    actor A as Analyst
     participant S as Observation sources
     participant M as Mistabra
+    actor A as Analyst
     A->>M: mission: goals, documents, risks
     Note over M: works out what to watch for, per risk
     loop every new observation
         S->>M: observation
-        M-->>A: relevant or not · to which hypothesis · how strongly · against which baseline
+        M-->>A: relevant or not · to which hypothesis ·<br/>how strongly · against which baseline
         opt the analyst has an intuition
-            A->>M: "this matters for hypothesis H" or "this detail is a signal"
-            M-->>A: the missing link or the missing hypothesis, tested against baselines
+            A->>M: "this matters for hypothesis H"<br/>or "this detail is a signal"
+            M-->>A: the missing link or the missing hypothesis,<br/>tested against baselines
         end
     end
-    Note over M: weak signals combine · contradicted hypotheses weaken · new hypotheses re-read earlier observations
+    Note over M: weak signals combine<br/>contradicted hypotheses weaken<br/>new hypotheses re-read old observations
     A->>M: confirm or reject, with a reason
 ```
 
