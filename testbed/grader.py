@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from mistabra_core.llm.prompts import Out, Prompt
+from mistabra.core.llm.prompts import Out, Prompt
 
 
 class Grade(Out):

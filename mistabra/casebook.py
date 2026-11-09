@@ -11,8 +11,8 @@ what it found. Something has to keep the case between calls. The Casebook does:
   and why, next to the assessment they are about: the audit trail, and later the data a decision model learns from;
 - persists to SQLite when given a path, or lives in memory.
 
-    from mistabra_core import Core, Settings
-    from mistabra_core.casebook import Casebook
+    from mistabra.core import Core, Episode, Settings
+    from mistabra.casebook import Casebook
 
     case = Casebook(Core(Settings.from_env()), mission, path="case.sqlite")
     h = case.add_hypothesis("The fleet stalled because the routing server was attacked.", risk="fleet")
@@ -33,8 +33,8 @@ from pathlib import Path
 from pydantic import Field
 
 from .core import Core
-from .llm.prompts import Out, Prompt
-from .types import (Assessment, Episode, Hypothesis, HypothesisRef, MissionContext, OperationalContext, SignalDraft,
+from .core.llm.prompts import Out, Prompt
+from .core.types import (Assessment, Episode, Hypothesis, HypothesisRef, MissionContext, OperationalContext, SignalDraft,
                     StoredTrajectory, TrajectoryInput)
 
 

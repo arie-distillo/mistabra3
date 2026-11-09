@@ -1,8 +1,9 @@
 """The Casebook: the layer above the core that keeps a case between calls."""
 import json
 
-from mistabra_core import Casebook, Core, Episode, Settings
-from mistabra_core.llm.fake import FakeProvider
+from mistabra.casebook import Casebook
+from mistabra.core import Core, Episode, Settings
+from mistabra.core.llm.fake import FakeProvider
 
 from .conftest import HOUSE, ep
 

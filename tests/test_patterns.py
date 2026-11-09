@@ -1,7 +1,7 @@
 """The eight input patterns (spec v3 §4.2): what is given stays given, what is missing is completed."""
 import pytest
 
-from mistabra_core import HypothesisDraft, SignalContent, SignalDraft, TrajectoryInput
+from mistabra.core import HypothesisDraft, SignalContent, SignalDraft, TrajectoryInput
 from tests.conftest import DOORS, GROCERIES, HOODED, HOUSE, ep, make_core
 
 NO_RADAR = {"episode.triage": {"relevant": False, "confidence": 0.9, "radar": None, "touches": [], "content": None}}
@@ -49,7 +49,7 @@ def test_p1_lambda_signal_when_no_radar_matches(mission, op):
 
 
 def test_p1_lambda_hypothesis_when_nothing_stored_fits(core, mission):
-    from mistabra_core import OperationalContext
+    from mistabra.core import OperationalContext
     a = core.assess(mission, OperationalContext(), TrajectoryInput(episode=ep(HOODED)))
     g = next(g for g in a.groups if g.target.risk.risk_id == "attack")
     assert g.target.hypothesis.origin == "articulated" and g.target.lambda_hypothesis and g.target.hypothesis.id is None

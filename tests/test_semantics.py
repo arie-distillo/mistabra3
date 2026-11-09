@@ -1,8 +1,8 @@
 """Semantics (spec v3 §5): scope, detail, reuse and rejection, score in isolation, standing, provenance, statelessness."""
 import pytest
 
-from mistabra_core import OperationalContext, TrajectoryInput
-from mistabra_core.scoring import noisy_or, score_from
+from mistabra.core import OperationalContext, TrajectoryInput
+from mistabra.core.scoring import noisy_or, score_from
 from tests.conftest import HOODED, HOUSE, ep, make_core, traj
 
 
@@ -108,7 +108,7 @@ def test_rejected_trajectories_alone_give_no_standing(mission, op):
 
 
 def test_analysts_own_trajectory_weighs_fully(core, mission, op):
-    from mistabra_core import SignalDraft
+    from mistabra.core import SignalDraft
     s = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE, eid="own"), signal=SignalDraft(note="n"), hypothesis="H_elm")).groups[0].standing
     assert {u.trajectory_id: u.weight for u in s.used}["this:own"] == 1.0
 
@@ -296,7 +296,7 @@ def test_given_hypothesis_episode_does_not_bear_on_is_neutral(mission, op, strat
 def test_neutral_facts_stay_in_view_for_conjunctions(mission, op):
     """A fact neutral alone (a recorded payload) must reach both the assessment and the standing judgment of a later
     episode (the stated limit) that completes the conjunction."""
-    from mistabra_core.types import SignalContent
+    from mistabra.core.types import SignalContent
     payload = traj("n1", "H_elm", 0.0).model_copy(update={"stance": "neutral", "signal": SignalContent(summary="payload was 620 kg")})
     ctx = op.model_copy(update={"trajectories": (payload,)})
     seen = {}
@@ -308,8 +308,8 @@ def test_neutral_facts_stay_in_view_for_conjunctions(mission, op):
 
 
 def test_default_standing_is_noisy_or_and_makes_no_standing_call(mission, op):
-    from mistabra_core import Core, Settings
-    from mistabra_core.llm.fake import FakeProvider
+    from mistabra.core import Core, Settings
+    from mistabra.core.llm.fake import FakeProvider
     core = Core(Settings(force_fake=True), provider=FakeProvider())
     assert core.settings.standing == "noisy_or"
     a = core.assess(mission, op, TrajectoryInput(episode=ep(HOUSE), risk="attack"))
@@ -338,7 +338,7 @@ def test_held_hypothesis_with_enough_facts_is_sharpened_and_the_refinement_inher
 
 
 def test_too_few_facts_or_an_existing_refinement_means_no_sharpening(mission, op):
-    from mistabra_core.types import Hypothesis
+    from mistabra.core.types import Hypothesis
     calls = []
     over = {**SUPPORTS_ELM, "hypothesis.sharpen": lambda d: (calls.append(d), {"sharper_claim": "x y z"})[1]}
     make_core(over).assess(mission, _with_facts(op, 1), TrajectoryInput(episode=ep(HOODED, eid="new"), risk="attack"))
@@ -348,7 +348,7 @@ def test_too_few_facts_or_an_existing_refinement_means_no_sharpening(mission, op
 
 
 def test_a_stored_refinement_counts_its_parents_evidence(mission, op):
-    from mistabra_core.types import Hypothesis
+    from mistabra.core.types import Hypothesis
     child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", author="system", status="proposed", refines="H_elm")
     over = {"episode.assess": {"stored": [{"hypothesis_id": "H_elm2", "stance": "supports", "confidence": 0.9, "fit": 0.6, "reach": 0.3}]}}
     g = make_core(over, standing="noisy_or").assess(mission, _with_facts(op, 2, [child]),
@@ -358,7 +358,7 @@ def test_a_stored_refinement_counts_its_parents_evidence(mission, op):
 
 # ---------------------------------------------------------------- option B: margin score for tailored hypotheses
 def test_margin_score_applies_only_to_a_hypothesis_written_from_this_episode(mission, op):
-    from mistabra_core.scoring import score_from, score_margin
+    from mistabra.core.scoring import score_from, score_margin
     assert score_margin(0.6, 0.45, 1.0, 1.0) < score_from(0.6, 0.85, 0.45, 1.0, 1.0)
     new = {"episode.assess": {"new": [{"claim": "A new tailored claim about Elm Street", "fit": 0.9, "reach": 0.4,
                                        "baselines": {"new": [{"claim": "an estate agent", "fit": 0.5}]}}]}}
@@ -381,7 +381,7 @@ def test_input_hash_covers_the_operational_context_and_detail(mission, op):
 
 
 def test_assessment_sees_only_touched_and_closest_held_hypotheses(mission, op):
-    from mistabra_core.types import Hypothesis
+    from mistabra.core.types import Hypothesis
     many = tuple(Hypothesis(id=f"X{i}", risk_id="attack", claim=f"Unrelated mechanism number {i} about parking fines", author="system",
                             status="proposed") for i in range(20))
     seen = []
@@ -397,7 +397,7 @@ def test_assessment_sees_only_touched_and_closest_held_hypotheses(mission, op):
 def test_a_given_held_hypothesis_is_sharpened_too_counting_inherited_facts(mission, op):
     """The look-back re-submits an old clue with a hypothesis given; if that makes enough facts, the claim is sharpened.
     For a refinement, the parent's facts count."""
-    from mistabra_core.types import Hypothesis
+    from mistabra.core.types import Hypothesis
     child = Hypothesis(id="H_elm2", risk_id="attack", claim="A sharper Elm Street claim", author="system", status="proposed", refines="H_elm")
     calls = []
     over = {"episode.assess": {"given": {"stance": "supports", "fit": 0.6, "reach": 0.3}},

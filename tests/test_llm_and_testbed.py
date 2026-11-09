@@ -3,8 +3,8 @@ settings, and the testbed's own plumbing (scenario loading, other-layer stub, me
 import os
 import pytest
 
-from mistabra_core import Settings
-from mistabra_core.llm import OUTPUT_RETRIES, FakeProvider, Gateway, LLMAuthError, LLMOutputError, LLMTransportError, Recorder
+from mistabra.core import Settings
+from mistabra.core.llm import OUTPUT_RETRIES, FakeProvider, Gateway, LLMAuthError, LLMOutputError, LLMTransportError, Recorder
 
 V = {"risk_text": "r", "context": [], "hypotheses": []}
 
@@ -75,7 +75,7 @@ def test_auth_error_not_retried():
 
 def test_server_error_retried(monkeypatch):
     from pydantic_ai.exceptions import ModelHTTPError
-    monkeypatch.setattr("mistabra_core.llm.gateway.time.sleep", lambda s: None)
+    monkeypatch.setattr("mistabra.core.llm.gateway.time.sleep", lambda s: None)
     p, n = _raising(ModelHTTPError(503, "m", "busy"))
     with pytest.raises(LLMTransportError):
         _gw(p).call("radar.derive", V)
@@ -84,7 +84,7 @@ def test_server_error_retried(monkeypatch):
 
 @pytest.mark.parametrize("provider,cls", [("openrouter", "OpenAIChatModel"), ("openai", "OpenAIChatModel"), ("anthropic", "AnthropicModel")])
 def test_backend_builds_pydantic_ai_models(provider, cls):
-    from mistabra_core.llm import Backend
+    from mistabra.core.llm import Backend
     b = Backend(Settings(provider=provider, api_key="k", base_url="http://localhost:11434/v1" if provider == "openai" else None,
                          reasoning="none"))
     m = b.model("reasoning")
@@ -114,7 +114,7 @@ def test_scenarios_load():
 
 
 def test_harness_keeps_and_reuses(tmp_path):
-    from mistabra_core import Core
+    from mistabra.core import Core
     from testbed.harness import run_scenario
     from testbed.scenario import discover
     sc = next(s for s in discover(include_private=False) if s.id == "flood_conjunction")
@@ -136,7 +136,7 @@ def test_harness_keeps_and_reuses(tmp_path):
 
 
 def test_analyst_actions_applied():
-    from mistabra_core import Core, Episode, Hypothesis, MissionContext, OperationalContext, Risk
+    from mistabra.core import Core, Episode, Hypothesis, MissionContext, OperationalContext, Risk
     from testbed.harness import run_scenario
     from testbed.scenario import Scenario, Step
     sc = Scenario(id="t", kind="sequence", mission=MissionContext(version="1", risks=(Risk(id="attack", text="Hateful radicals attack homes on Elm Street."),)),
@@ -164,7 +164,7 @@ def test_full_offline_run_produces_every_metric():
 
 
 def test_dotenv_loaded_from_parent_without_overriding(tmp_path, monkeypatch):
-    from mistabra_core.settings import load_dotenv
+    from mistabra.core.settings import load_dotenv
     (tmp_path / ".env").write_text("# comment\nMISTABRA_T_A=one   # trailing\nexport MISTABRA_T_B='two words'\nMISTABRA_T_C=x\n", encoding="utf-8")
     sub = tmp_path / "a" / "b"
     sub.mkdir(parents=True)
@@ -179,7 +179,7 @@ def test_dotenv_loaded_from_parent_without_overriding(tmp_path, monkeypatch):
 
 
 def test_key_belongs_to_the_provider(monkeypatch):
-    from mistabra_core.settings import _key_for
+    from mistabra.core.settings import _key_for
     env = {"OPENAI_API_KEY": "sk-openai", "ANTHROPIC_API_KEY": "sk-ant", "OPENROUTER_API_KEY": "sk-or"}
     assert _key_for("openrouter", env) == ("OPENROUTER_API_KEY", "sk-or")
     assert _key_for("anthropic", env) == ("ANTHROPIC_API_KEY", "sk-ant")
@@ -225,10 +225,10 @@ def test_gateway_is_safe_from_many_threads():
 
 
 def test_call_log_records_every_call_with_its_episode(tmp_path):
-    from mistabra_core import Core
+    from mistabra.core import Core
     from tests.conftest import ep
     import json as _j
-    from mistabra_core import TrajectoryInput
+    from mistabra.core import TrajectoryInput
     from testbed.scenario import discover
     sc = next(s for s in discover() if s.id == "flood_conjunction")
     log = tmp_path / "calls.jsonl"
@@ -244,7 +244,7 @@ def test_standing_is_a_chain_of_updates_across_steps():
     """The other layer keeps the reported standing; the next step's `without` starts from it (spec v3.2)."""
     from testbed.harness import run_scenario
     from testbed.scenario import discover
-    from mistabra_core import Core
+    from mistabra.core import Core
     core = Core(Settings(force_fake=True), provider=FakeProvider())
     checked = 0
     for sc in [s for s in discover() if s.id.startswith("miss_0")]:
@@ -265,7 +265,7 @@ def test_standing_is_a_chain_of_updates_across_steps():
 def test_a_failed_episode_is_skipped_not_the_scenario():
     from testbed.harness import run_scenario
     from testbed.scenario import discover
-    from mistabra_core import Core
+    from mistabra.core import Core
     sc = next(s for s in discover() if s.id == "miss_01")
     target = sc.steps[3].episode.text
     def assess(d):
@@ -294,7 +294,7 @@ def test_call_log_records_why_answers_were_sent_back(tmp_path):
 
 
 def test_baselines_as_a_bare_list_and_none_strings_are_accepted():
-    from mistabra_core.llm.prompts import AssessOut
+    from mistabra.core.llm.prompts import AssessOut
     out = AssessOut.model_validate({"given": "None", "stored": [
         {"hypothesis_id": "H1", "stance": "supports", "baselines": []},
         {"hypothesis_id": "H2", "stance": "supports", "baselines": [{"baseline_id": "B1", "fit": 0.4}, {"claim": "routine work", "fit": 0.6}]}]})
@@ -320,7 +320,7 @@ def test_look_back_reattaches_an_earlier_clue_to_a_new_hypothesis():
     a hypothesis appears later, the other layer re-submits it, and it attaches."""
     from testbed.harness import run_scenario
     from testbed.scenario import discover
-    from mistabra_core import Core
+    from mistabra.core import Core
     sc = next(s for s in discover() if s.id == "miss_05")
     clue = next(st for st in sc.steps if "plumber" in st.episode.text)
 
@@ -368,7 +368,7 @@ def test_settings_reject_out_of_range_values():
 
 def test_max_calls_stops_further_model_calls():
     import pytest as _p
-    from mistabra_core.llm import LLMBudgetError
+    from mistabra.core.llm import LLMBudgetError
     g = Gateway(Settings(force_fake=True, max_calls=2), FakeProvider())
     for i in range(2):
         g.call("radar.derive", {"risk_text": f"r{i}"})

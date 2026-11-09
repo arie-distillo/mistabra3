@@ -1,7 +1,7 @@
 [project]
-name = "mistabra-core"
-version = "0.3.0"
-description = "Mistabra Core — the reasoning layer of an analyst's co-pilot that turns intuition into reasoning (spec v3)"
+name = "mistabra"
+version = "0.4.0"
+description = "Mistabra — an analyst's co-pilot that turns intuition into reasoning"
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2", "pydantic-ai-slim[openai,anthropic]>=1.0"]
 
@@ -14,7 +14,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["mistabra_core*"]
+include = ["mistabra*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

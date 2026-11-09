@@ -5,9 +5,9 @@ os.environ["MISTABRA_FORCE_FAKE"] = "1"
 
 import pytest  # noqa: E402
 
-from mistabra_core import (Core, Document, Episode, Hypothesis, MissionContext, OperationalContext, Risk,  # noqa: E402
+from mistabra.core import (Core, Document, Episode, Hypothesis, MissionContext, OperationalContext, Risk,  # noqa: E402
                            Settings, StoredTrajectory)
-from mistabra_core.llm import FakeProvider  # noqa: E402
+from mistabra.core.llm import FakeProvider  # noqa: E402
 
 HOUSE = "A passer-by photographed the front of Jens Hofer's house on Elm Street while walking past in the morning."
 HOODED = ("From a grey Volkswagen with covered plates parked on Maple Road, a hooded person filmed the entrances of the "

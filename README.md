@@ -28,7 +28,8 @@ two irrelevant reports. Mistabra weakens both of the analyst's hypotheses, propo
 controller is unplugged at night), and builds its standing as the clues combine.
 
 ```python
-from mistabra_core import Casebook, Core, Episode, Settings
+from mistabra.casebook import Casebook
+from mistabra.core import Core, Episode, Settings
 
 case = Casebook(Core(Settings.from_env()), mission, path="case.sqlite")   # keeps the case between calls
 case.add_hypothesis("Stock spoils because a compressor is failing.", risk="spoilage")
@@ -155,13 +156,14 @@ answer. `--max-calls` (default 1500 per run) stops a run that grows beyond budge
 ## Layout
 
 ```
-mistabra_core/        the library
-  core.py             assess(): triage, assessment, sharpening, score, standing
-  casebook.py         Casebook: keeps a case, look-back, analyst decisions, export, SQLite
-  types.py            the API types
-  scoring.py          score formula, noisy-OR standing
-  settings.py         provider, models, thresholds, limits
-  llm/                model access (PydanticAI), cache, call log, prompts, offline fake model
+mistabra/             the library
+  core/               the reasoning layer (stateless)
+    engine.py         assess(): triage, assessment, sharpening, score, standing
+    types.py          the API types
+    scoring.py        score formula, noisy-OR standing
+    settings.py       provider, models, thresholds, limits
+    llm/              model access (PydanticAI), cache, call log, prompts, offline fake model
+  casebook.py         the layer above: keeps a case, look-back, analyst decisions, export, SQLite
 examples/             cold_store.py, the quickstart
 testbed/              scenarios, adapters for case files, runner, metrics, reports
 tests/                functional tests (offline)

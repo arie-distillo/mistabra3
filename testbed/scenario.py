@@ -19,7 +19,7 @@ from typing import Any, Union
 import yaml
 from pydantic import BaseModel, Field
 
-from mistabra_core.types import (Document, Episode, Hypothesis, HypothesisDraft, MissionContext, OperationalContext, Risk,
+from mistabra.core.types import (Document, Episode, Hypothesis, HypothesisDraft, MissionContext, OperationalContext, Risk,
                                  SignalContent, SignalDraft)
 
 HERE = Path(__file__).resolve().parent

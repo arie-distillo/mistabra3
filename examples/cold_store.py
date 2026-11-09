@@ -18,7 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mistabra_core import Casebook, Core, Document, Episode, MissionContext, Risk, Settings  # noqa: E402
+from mistabra.casebook import Casebook  # noqa: E402
+from mistabra.core import Core, Document, Episode, MissionContext, Risk, Settings  # noqa: E402
 
 MISSION = MissionContext(
     version="cold-store-1",

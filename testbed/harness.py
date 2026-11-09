@@ -1,6 +1,6 @@
 """The scenario runner.
 
-Each scenario is fed episode by episode through a `Casebook` (mistabra_core/casebook.py), the layer above the core that
+Each scenario is fed episode by episode through a `Casebook` (mistabra/casebook.py), the layer above the core that
 keeps the case between calls: every returned group is kept (new hypotheses as proposed, baselines with `baseline_of`,
 trajectories as proposed), an identical claim reuses the stored one, and when a hypothesis appears the look-back
 re-reads recent episodes that bore on nothing. The runner adds only what a scenario scripts: analyst actions in a
@@ -14,9 +14,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from mistabra_core.llm.base import LLMOutputError
-from mistabra_core import Casebook, Core
-from mistabra_core.types import (Assessment, Hypothesis, HypothesisRef, OperationalContext, StoredTrajectory, TrajectoryInput)
+from mistabra.core.llm.base import LLMOutputError
+from mistabra.casebook import Casebook
+from mistabra.core import Core
+from mistabra.core.types import (Assessment, Hypothesis, HypothesisRef, OperationalContext, StoredTrajectory, TrajectoryInput)
 
 from .scenario import Scenario, Step
 

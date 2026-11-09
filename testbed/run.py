@@ -45,12 +45,12 @@ HEADLINE = [
 
 
 def run(settings_overrides: dict, only: list[str], log=print, jobs: int = 4, lookback: bool = True) -> dict:
-    from mistabra_core import Core, Settings
-    from mistabra_core.llm import LLMAuthError, LLMBudgetError
+    from mistabra.core import Core, Settings
+    from mistabra.core.llm import LLMAuthError, LLMBudgetError
     settings = Settings.from_env(**settings_overrides)
     core = Core(settings)
     scenarios = [s for s in discover() if not only or any(o in s.id for o in only)]
-    from mistabra_core.settings import describe_key
+    from mistabra.core.settings import describe_key
     log(f"testbed provider={settings.provider} ({describe_key(settings.provider) if settings.uses_real_llm else 'offline'}) model={settings.model} fast={settings.fast_model} reasoning={settings.reasoning or 'default'} standing={settings.standing} "
         f"scenarios={len(scenarios)} steps={sum(len(s.steps) * (max(1, len(s.operational.hypotheses)) if s.per_hypothesis else 1) for s in scenarios)}")
     t0 = time.time()
@@ -170,7 +170,7 @@ def main(argv=None) -> int:
     if not a.live:
         os.environ["MISTABRA_FORCE_FAKE"] = "1"
     else:
-        from mistabra_core import Settings
+        from mistabra.core import Settings
         s = Settings.from_env()
         if not s.uses_real_llm:
             print("ERROR: --live needs a model. Set MISTABRA_PROVIDER (anthropic | openrouter | openai), MISTABRA_MODEL, and the key in "
